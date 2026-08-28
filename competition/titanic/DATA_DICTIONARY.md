@@ -63,9 +63,18 @@ Tài liệu này phân tích chi tiết từng thuộc tính trong bộ dữ li�
 ### `Age` (Độ Tuổi)
 * **Kiểu:** Số thực (0.42 – 80.0 tuổi).
 * **Dữ liệu khuyết thiếu:** 177 giá trị ở Train (~20%), 86 giá trị ở Test (~21%).
+* **Nguồn gốc biến `Title`:** `Title` (Danh xưng) không có sẵn trong dữ liệu gốc mà được **trích xuất từ cột `Name`** (ví dụ: `"Braund, Mr. Owen Harris"` $\rightarrow$ `Mr`, `"Palsson, Master. Gosta"` $\rightarrow$ `Master`). Bước trích xuất `Title` được thực hiện trước khi điền khuyết `Age`.
 * **Chiến lược điền khuyết (Imputation):**
-  * Không nên chỉ điền bằng trung vị chung (Median).
-  * Điền Median của `Age` theo từng nhóm `(Title, Pclass, Sex)` để độ tuổi điền vào chính xác nhất (ví dụ: `Master` sẽ được điền tuổi trẻ con ~4-5 tuổi, `Mrs` sẽ được điền tuổi trưởng thành ~30-35 tuổi).
+  * **Không nên điền Mean/Median chung toàn bộ bảng:** Sẽ làm mất tính phân hóa độ tuổi giữa trẻ em và người lớn (làm một bé trai 2 tuổi bị điền thành 28-29 tuổi).
+  * **Điền Median theo nhóm `(Title, Pclass)`:** Nhóm này là tối ưu nhất vì:
+    * `Title` **đã chứa sẵn thông tin giới tính `Sex`** (`Mr`, `Master` là Nam 100%; `Miss`, `Mrs` là Nữ 100%) và phân tầng độ tuổi rõ rệt (`Master` $\le 12$ tuổi, `Mr` trưởng thành).
+    * `Pclass` đại diện cho thế hệ và tầng lớp xã hội (Hành khách Hạng 1 thường già dặn hơn Hạng 3).
+  * **Ví dụ độ tuổi trung vị thực tế theo nhóm:**
+    * `(Master, Pclass 1, 2, 3)` $\rightarrow$ **~4 – 5 tuổi** (bé trai).
+    * `(Mr, Pclass 1)` $\rightarrow$ **~40 tuổi** (quý ông trung niên).
+    * `(Mr, Pclass 3)` $\rightarrow$ **~26 tuổi** (thanh niên lao động).
+    * `(Miss, Pclass 1)` $\rightarrow$ **~30 tuổi**; `(Miss, Pclass 3)` $\rightarrow$ **~18 tuổi**.
+    * `(Mrs, Pclass 1)` $\rightarrow$ **~40 tuổi**; `(Mrs, Pclass 3)` $\rightarrow$ **~31 tuổi**.
 
 ---
 
@@ -156,19 +165,19 @@ flowchart TD
 
 ### 📊 2.1 Bảng Ánh Xạ Biến Đầu Vào (Input-Output Feature Mapping Table)
 
-| Cột Gốc (Raw Feature) | Phương Pháp Tiền Xử Lý & Biến Đổi | Tên Biến Mới (Engineered Feature) | Kiểu Dữ Liệu | Áp Dụng Cho Mô Hình Cây (RF, ET, XGB, LGBM, CatBoost) | Áp Dụng Cho Mô Hình Tuyến Tính (Logistic Regression) |
-| :--- | :--- | :--- | :---: | :---: | :---: |
-| `PassengerId` | Bỏ qua khi train, giữ lại để xuất submission. | - | `int64` | ❌ Loại bỏ | ❌ Loại bỏ |
-| `Survived` | Biến mục tiêu (Target). | `Survived` | `int64` ($0/1$) | Target $y$ | Target $y$ |
-| `Pclass` | Giữ nguyên thứ tự hạng vé. | `Pclass` | `int64` ($1, 2, 3$) | Dạng Ordinal ($1, 2, 3$) | One-Hot (`Pclass_1`, `Pclass_2`, `Pclass_3`) |
-| `Name` | Regex trích xuất danh xưng $\rightarrow$ gom nhóm 5 loại (`Mr`, `Miss`, `Mrs`, `Master`, `Rare`). | `Title` | `int64` / `string` | Label Encoding ($0..4$) | One-Hot Encoding (5 cột) |
-| `Sex` | Nhị phân hóa giới tính. | `Sex` | `int64` ($0/1$) | $0 = \text{male}, 1 = \text{female}$ | $0 = \text{male}, 1 = \text{female}$ |
-| `Age` | Điền missing bằng trung vị nhóm `(Title, Pclass)`. | `Age` | `float64` | Điền median $\rightarrow$ Giữ nguyên số thực | Điền median $\rightarrow$ `StandardScaler` |
-| `SibSp`, `Parch` | Tính tổng số thành viên gia đình đi cùng: $\text{SibSp} + \text{Parch} + 1$. | `FamilySize`<br>`IsAlone` | `int64`<br>`int64` ($0/1$) | `FamilySize` ($1..11$)<br>`IsAlone` ($0/1$) | `StandardScaler(FamilySize)`<br>`IsAlone` ($0/1$) |
-| `Ticket` | Đếm số lượng người chung mã vé. | `TicketFrequency` | `int64` | Tần suất xuất hiện ($1..7$) | `StandardScaler(TicketFrequency)` |
-| `Fare` | 1. Điền missing bằng median `Pclass = 3`<br>2. $\text{FarePerPerson} = \text{Fare} / \text{TicketFrequency}$<br>3. $\text{LogFare} = \ln(1 + \text{FarePerPerson})$. | `FarePerPerson`<br>`LogFare` | `float64`<br>`float64` | Giảm độ lệch skewness, phân tách tốt tầng lớp | Bắt buộc `StandardScaler` (tránh giá trị vé áp đảo trọng số) |
-| `Cabin` | 1. Lấy chữ cái đầu boong tàu (`A` - `G`, `'U'` cho missing)<br>2. Cờ `HasCabin = (Deck != 'U')`. | `Deck`<br>`HasCabin` | `int64`<br>`int64` ($0/1$) | Label Encoding (`Deck`)<br>`HasCabin` ($0/1$) | One-Hot (`Deck_A`..`Deck_U`)<br>`HasCabin` ($0/1$) |
-| `Embarked` | Điền missing 2 dòng bằng Mode (`'S'`). | `Embarked` | `int64` / `string` | Label Encoding (`0, 1, 2`) | One-Hot (`Embarked_C, Q, S`) |
+| Cột Gốc (Raw Feature) | Phương Pháp Tiền Xử Lý & Biến Đổi                                                                                                                                    | Tên Biến Mới (Engineered Feature) |        Kiểu Dữ Liệu        | Áp Dụng Cho Mô Hình Cây (RF, ET, XGB, LGBM, CatBoost) |     Áp Dụng Cho Mô Hình Tuyến Tính (Logistic Regression)     |
+| :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------- | :------------------------: | :---------------------------------------------------: | :----------------------------------------------------------: |
+| `PassengerId`         | Bỏ qua khi train, giữ lại để xuất submission.                                                                                                                        | -                                 |          `int64`           |                       ❌ Loại bỏ                       |                          ❌ Loại bỏ                           |
+| `Survived`            | Biến mục tiêu (Target).                                                                                                                                              | `Survived`                        |      `int64` ($0/1$)       |                      Target $y$                       |                          Target $y$                          |
+| `Pclass`              | Giữ nguyên thứ tự hạng vé.                                                                                                                                           | `Pclass`                          |    `int64` ($1, 2, 3$)     |               Dạng Ordinal ($1, 2, 3$)                |         One-Hot (`Pclass_1`, `Pclass_2`, `Pclass_3`)         |
+| `Name`                | Regex trích xuất danh xưng $\rightarrow$ gom nhóm 5 loại (`Mr`, `Miss`, `Mrs`, `Master`, `Rare`).                                                                    | `Title`                           |     `int64` / `string`     |                Label Encoding ($0..4$)                |                   One-Hot Encoding (5 cột)                   |
+| `Sex`                 | Nhị phân hóa giới tính.                                                                                                                                              | `Sex`                             |      `int64` ($0/1$)       |         $0 = \text{male}, 1 = \text{female}$          |             $0 = \text{male}, 1 = \text{female}$             |
+| `Age`                 | Điền missing bằng trung vị nhóm `(Title, Pclass)`.                                                                                                                   | `Age`                             |         `float64`          |     Điền median $\rightarrow$ Giữ nguyên số thực      |          Điền median $\rightarrow$ `StandardScaler`          |
+| `SibSp`, `Parch`      | Tính tổng số thành viên gia đình đi cùng: $\text{SibSp} + \text{Parch} + 1$.                                                                                         | `FamilySize`<br>`IsAlone`         | `int64`<br>`int64` ($0/1$) |      `FamilySize` ($1..11$)<br>`IsAlone` ($0/1$)      |      `StandardScaler(FamilySize)`<br>`IsAlone` ($0/1$)       |
+| `Ticket`              | Đếm số lượng người chung mã vé.                                                                                                                                      | `TicketFrequency`                 |          `int64`           |              Tần suất xuất hiện ($1..7$)              |              `StandardScaler(TicketFrequency)`               |
+| `Fare`                | 1. Điền missing bằng median `Pclass = 3`<br>2. $\text{FarePerPerson} = \text{Fare} / \text{TicketFrequency}$<br>3. $\text{LogFare} = \ln(1 + \text{FarePerPerson})$. | `FarePerPerson`<br>`LogFare`      |   `float64`<br>`float64`   |     Giảm độ lệch skewness, phân tách tốt tầng lớp     | Bắt buộc `StandardScaler` (tránh giá trị vé áp đảo trọng số) |
+| `Cabin`               | 1. Lấy chữ cái đầu boong tàu (`A` - `G`, `'U'` cho missing)<br>2. Cờ `HasCabin = (Deck != 'U')`.                                                                     | `Deck`<br>`HasCabin`              | `int64`<br>`int64` ($0/1$) |     Label Encoding (`Deck`)<br>`HasCabin` ($0/1$)     |      One-Hot (`Deck_A`..`Deck_U`)<br>`HasCabin` ($0/1$)      |
+| `Embarked`            | Điền missing 2 dòng bằng Mode (`'S'`).                                                                                                                               | `Embarked`                        |     `int64` / `string`     |              Label Encoding (`0, 1, 2`)               |                 One-Hot (`Embarked_C, Q, S`)                 |
 
 ---
 
