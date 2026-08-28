@@ -136,7 +136,7 @@ flowchart TD
     end
 
     subgraph Preprocessing ["Tiền Xử Lý & Trích Xuất (Preprocessing & Feature Extraction)"]
-        Raw_ID --> DropID["Loại bỏ khỏi tập X"]
+        Raw_ID --> DropID["Loại bỏ khỏi tập X (Chỉ dùng làm Key nộp bài)"]
         Raw_Text --> FE_Name["Trích xuất Title: Mr, Miss, Mrs, Master, Rare"]
         Raw_Text --> FE_Cabin["Trích xuất Deck A-G/U + Cờ HasCabin"]
         Raw_Text --> FE_Ticket["Đếm TicketFrequency"]
@@ -150,12 +150,12 @@ flowchart TD
     subgraph ModelFormatting ["Định Dạng Cho Từng Họ Mô Hình (Model-Specific Formatting)"]
         Imp_Age & Calc_Fare & Calc_Fam & FE_Cabin & Imp_Emb & FE_Name --> Split{"Nhóm Mô Hình"}
         
-        Split -->|Mô Hình Cây: RF, ExtraTrees, XGB, LGBM, CatBoost| TreePipe["<b>1. Tree-based Pipeline</b><br>- Label Encoding biến chữ<br>- Giữ nguyên thang đo tự nhiên<br>- Không cần StandardScaler"]
-        Split -->|Mô Hình Tuyến Tính: Logistic Regression / Meta-Learner| LinearPipe["<b>2. Linear Pipeline</b><br>- One-Hot Encoding biến rời rạc<br>- Bắt buộc StandardScaler<br>- Chuẩn hóa Z-score mu=0, sigma=1"]
+        Split -->|Mô Hình Cây: RF, ExtraTrees, XGB, LGBM, CatBoost| TreePipe["<b>1. Tree-based Pipeline (14 Cột)</b><br>- Label Encoding biến chữ (Title, Deck, Embarked)<br>- Giữ nguyên thang đo tự nhiên<br>- Không cần StandardScaler"]
+        Split -->|Mô Hình Tuyến Tính: Logistic Regression / Meta-Learner| LinearPipe["<b>2. Linear Pipeline (29 Cột)</b><br>- One-Hot Encoding biến rời rạc (Bung 5 Title, 8 Deck, 3 Embarked, 3 Pclass)<br>- Bắt buộc StandardScaler trên toàn bộ biến số<br>- Chuẩn hóa Z-score mu=0, sigma=1"]
     end
 
     TreePipe --> Output_Tree["Ma trận X_tree (14 features)"]
-    LinearPipe --> Output_Linear["Ma trận X_linear (20+ features scaled)"]
+    LinearPipe --> Output_Linear["Ma trận X_linear (29 features scaled)"]
     
     style TreePipe fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     style LinearPipe fill:#fff3e0,stroke:#e65100,stroke-width:2px;
@@ -165,47 +165,78 @@ flowchart TD
 
 ### 📊 2.1 Bảng Ánh Xạ Biến Đầu Vào (Input-Output Feature Mapping Table)
 
-| Cột Gốc (Raw Feature) | Phương Pháp Tiền Xử Lý & Biến Đổi                                                                                                                                    | Tên Biến Mới (Engineered Feature) |        Kiểu Dữ Liệu        | Áp Dụng Cho Mô Hình Cây (RF, ET, XGB, LGBM, CatBoost) |     Áp Dụng Cho Mô Hình Tuyến Tính (Logistic Regression)     |
-| :-------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------- | :------------------------: | :---------------------------------------------------: | :----------------------------------------------------------: |
-| `PassengerId`         | Bỏ qua khi train, giữ lại để xuất submission.                                                                                                                        | -                                 |          `int64`           |                       ❌ Loại bỏ                       |                          ❌ Loại bỏ                           |
-| `Survived`            | Biến mục tiêu (Target).                                                                                                                                              | `Survived`                        |      `int64` ($0/1$)       |                      Target $y$                       |                          Target $y$                          |
-| `Pclass`              | Giữ nguyên thứ tự hạng vé.                                                                                                                                           | `Pclass`                          |    `int64` ($1, 2, 3$)     |               Dạng Ordinal ($1, 2, 3$)                |         One-Hot (`Pclass_1`, `Pclass_2`, `Pclass_3`)         |
-| `Name`                | Regex trích xuất danh xưng $\rightarrow$ gom nhóm 5 loại (`Mr`, `Miss`, `Mrs`, `Master`, `Rare`).                                                                    | `Title`                           |     `int64` / `string`     |                Label Encoding ($0..4$)                |                   One-Hot Encoding (5 cột)                   |
-| `Sex`                 | Nhị phân hóa giới tính.                                                                                                                                              | `Sex`                             |      `int64` ($0/1$)       |         $0 = \text{male}, 1 = \text{female}$          |             $0 = \text{male}, 1 = \text{female}$             |
-| `Age`                 | Điền missing bằng trung vị nhóm `(Title, Pclass)`.                                                                                                                   | `Age`                             |         `float64`          |     Điền median $\rightarrow$ Giữ nguyên số thực      |          Điền median $\rightarrow$ `StandardScaler`          |
-| `SibSp`, `Parch`      | Tính tổng số thành viên gia đình đi cùng: $\text{SibSp} + \text{Parch} + 1$.                                                                                         | `FamilySize`<br>`IsAlone`         | `int64`<br>`int64` ($0/1$) |      `FamilySize` ($1..11$)<br>`IsAlone` ($0/1$)      |      `StandardScaler(FamilySize)`<br>`IsAlone` ($0/1$)       |
-| `Ticket`              | Đếm số lượng người chung mã vé.                                                                                                                                      | `TicketFrequency`                 |          `int64`           |              Tần suất xuất hiện ($1..7$)              |              `StandardScaler(TicketFrequency)`               |
-| `Fare`                | 1. Điền missing bằng median `Pclass = 3`<br>2. $\text{FarePerPerson} = \text{Fare} / \text{TicketFrequency}$<br>3. $\text{LogFare} = \ln(1 + \text{FarePerPerson})$. | `FarePerPerson`<br>`LogFare`      |   `float64`<br>`float64`   |     Giảm độ lệch skewness, phân tách tốt tầng lớp     | Bắt buộc `StandardScaler` (tránh giá trị vé áp đảo trọng số) |
-| `Cabin`               | 1. Lấy chữ cái đầu boong tàu (`A` - `G`, `'U'` cho missing)<br>2. Cờ `HasCabin = (Deck != 'U')`.                                                                     | `Deck`<br>`HasCabin`              | `int64`<br>`int64` ($0/1$) |     Label Encoding (`Deck`)<br>`HasCabin` ($0/1$)     |      One-Hot (`Deck_A`..`Deck_U`)<br>`HasCabin` ($0/1$)      |
-| `Embarked`            | Điền missing 2 dòng bằng Mode (`'S'`).                                                                                                                               | `Embarked`                        |     `int64` / `string`     |              Label Encoding (`0, 1, 2`)               |                 One-Hot (`Embarked_C, Q, S`)                 |
+| Cột Gốc (Raw Feature) | Phương Pháp Tiền Xử Lý & Biến Đổi | Tên Biến Mới (Engineered Feature) | Kiểu Dữ Liệu | Áp Dụng Cho Mô Hình Cây (RF, ET, XGB, LGBM, CatBoost) | Áp Dụng Cho Mô Hình Tuyến Tính (Logistic Regression) |
+| :--- | :--- | :--- | :---: | :---: | :---: |
+| `PassengerId` | Bỏ qua khi train, giữ lại để xuất submission. | - | `int64` | ❌ Loại bỏ | ❌ Loại bỏ |
+| `Survived` | Biến mục tiêu (Target). | `Survived` | `int64` ($0/1$) | Target $y$ | Target $y$ |
+| `Pclass` | Giữ nguyên thứ tự hạng vé. | `Pclass` | `int64` ($1, 2, 3$) | Dạng Ordinal ($1, 2, 3$) | One-Hot (`Pclass_1`, `Pclass_2`, `Pclass_3`) |
+| `Name` | Regex trích xuất danh xưng $\rightarrow$ gom nhóm 5 loại (`Mr`, `Miss`, `Mrs`, `Master`, `Rare`). | `Title` | `int64` / `string` | Label Encoding ($0..4$) | One-Hot Encoding (5 cột: `Title_Mr`, `Title_Miss`...) |
+| `Sex` | Nhị phân hóa giới tính. | `Sex` | `int64` ($0/1$) | $0 = \text{male}, 1 = \text{female}$ | $0 = \text{male}, 1 = \text{female}$ |
+| `Age` | Điền missing bằng trung vị nhóm `(Title, Pclass)`. | `Age` | `float64` | Điền median $\rightarrow$ Giữ nguyên số thực | Điền median $\rightarrow$ `StandardScaler` |
+| `SibSp`, `Parch` | Tính tổng số thành viên gia đình đi cùng: $\text{SibSp} + \text{Parch} + 1$. | `FamilySize`<br>`IsAlone` | `int64`<br>`int64` ($0/1$) | `FamilySize` ($1..11$)<br>`IsAlone` ($0/1$) | `StandardScaler(FamilySize)`<br>`IsAlone` ($0/1$) |
+| `Ticket` | Đếm số lượng người chung mã vé. | `TicketFrequency` | `int64` | Tần suất xuất hiện ($1..7$) | `StandardScaler(TicketFrequency)` |
+| `Fare` | 1. Điền missing bằng median `Pclass = 3`<br>2. $\text{FarePerPerson} = \text{Fare} / \text{TicketFrequency}$<br>3. $\text{LogFare} = \ln(1 + \text{FarePerPerson})$. | `FarePerPerson`<br>`LogFare` | `float64`<br>`float64` | Giảm độ lệch skewness, phân tách tốt tầng lớp | Bắt buộc `StandardScaler` (tránh giá trị vé áp đảo trọng số) |
+| `Cabin` | 1. Lấy chữ cái đầu boong tàu (`A` - `G`, `'U'` cho missing)<br>2. Cờ `HasCabin = (Deck != 'U')`. | `Deck`<br>`HasCabin` | `int64`<br>`int64` ($0/1$) | Label Encoding (`Deck`: $0..7$)<br>`HasCabin` ($0/1$) | One-Hot (`Deck_A`..`Deck_U` - 8 cột)<br>`HasCabin` ($0/1$) |
+| `Embarked` | Điền missing 2 dòng bằng Mode (`'S'`). | `Embarked` | `int64` / `string` | Label Encoding (`0, 1, 2`) | One-Hot (`Embarked_C, Q, S` - 3 cột) |
 
 ---
 
-### ⚙️ 2.2 Quy Chuẩn Tiền Xử Lý Theo Từng Nhóm Mô Hình Đề Xuất
+### 🔍 2.2 So Sánh Chi Tiết Số Lượng Cột Giữa 2 Ma Trận Đầu Vào: `X_tree` (14 Cột) vs. `X_linear` (29 Cột)
 
-#### 🌲 1. Nhóm Mô Hình Cây (Random Forest, Extra Trees, XGBoost, LightGBM, CatBoost)
-* **Mã hóa (Encoding):**
-  * Sử dụng **Label Encoding** / **Ordinal Encoding** (`Sex`, `Embarked`, `Title`, `Deck`) $\rightarrow$ giúp giữ số chiều cố định (**14 features**), tránh hiện tượng cây bị phân mảnh dữ liệu (Sparsity) do One-Hot tạo ra quá nhiều cột $0$.
-  * Với **CatBoost** và **LightGBM**: Có thể truyền trực tiếp danh sách cột phân loại `categorical_features=['Sex', 'Embarked', 'Title', 'Deck']` để thuật toán tự động tối ưu hóa Target Statistics.
-* **Chuẩn hóa thang đo (Scaling):**
-  * **Không cần áp dụng `StandardScaler` hay `MinMaxScaler`**. Cây quyết định chia nhánh dựa trên bất đẳng thức so sánh ($x_j \le \theta$), bất biến với mọi phép biến đổi đơn điệu (Monotonic transformations).
-* **Xử lý Outliers:**
-  * Mô hình cây hoàn toàn miễn nhiễm với giá trị ngoại lai của `Fare` hay `Age`. Tuy nhiên, biến $\text{LogFare} = \ln(1 + \text{FarePerPerson})$ vẫn được khuyến nghị để giúp các mô hình Boosting hội tụ nhanh hơn.
+> [!IMPORTANT] **Bản Chất Khác Biệt Giữa Hai Nhóm Mô Hình:**
+> Số lượng cột khi đưa vào mô hình là **hoàn toàn khác nhau** do cơ chế tiếp nhận dữ liệu phân loại của từng nhóm thuật toán:
+> * **Mô hình Cây:** Dùng **Label Encoding** $\rightarrow$ 1 biến danh nghĩa chỉ cần **1 cột số nguyên duy nhất** $\rightarrow$ Tổng cộng cố định **14 cột**.
+> * **Mô hình Tuyến Tính:** Bắt buộc dùng **One-Hot Encoding** $\rightarrow$ Mỗi giá trị danh nghĩa được bung thành **1 cột nhị phân $0/1$ riêng biệt** $\rightarrow$ Tổng cộng mở rộng thành **29 cột**.
 
-#### 📈 2. Nhóm Mô Hình Tuyến Tính & Meta-Learner (Logistic Regression)
-* **Mã hóa (Encoding):**
-  * **Bắt buộc dùng One-Hot Encoding** cho tất cả các biến danh nghĩa (`Title`, `Embarked`, `Pclass`, `Deck`). Nếu dùng Label Encoding ($0, 1, 2$), hàm tuyến tính sẽ ngầm hiểu rằng $\text{Hạng 3} = 3 \times \text{Hạng 1}$, gây sai lệch bản chất toán học.
-* **Chuẩn hóa thang đo (Scaling):**
-  * **Bắt buộc áp dụng `StandardScaler` (Z-score Normalization)** trên toàn bộ các biến số (`Age`, `FarePerPerson`, `LogFare`, `FamilySize`, `TicketFrequency`):
-    $$z = \frac{x - \mu}{\sigma}$$
-  * *Lý do:* Nếu không chuẩn hóa, biến `Fare` (giá trị từ $0$ đến $>500$) sẽ lấn át hoàn toàn biến `Age` (từ $0$ đến $80$) hoặc `Sex` ($0/1$), khiến gradient descent bị dao động và thành phần điều hòa Regularization phạt sai lệch trọng số.
+#### 📋 Bảng Đối Chiếu Danh Sách Cột Của Từng Ma Trận:
+
+| STT | Tên thuộc tính nghiệp vụ | Ma trận `X_tree` (Mô hình Cây) - **14 Cột** | Ma trận `X_linear` (Logistic Regression) - **29 Cột** |
+| :---: | :--- | :--- | :--- |
+| **1** | Hạng vé (`Pclass`) | `Pclass` ($1, 2, 3$) | `Pclass_1`, `Pclass_2`, `Pclass_3` (3 cột) |
+| **2** | Giới tính (`Sex`) | `Sex` ($0, 1$) | `Sex` ($0, 1$) |
+| **3** | Độ tuổi (`Age`) | `Age` (Số thực gốc sau điền median) | `Age` (Đã qua `StandardScaler`) |
+| **4** | Anh em/Vợ chồng (`SibSp`) | `SibSp` (Số nguyên) | `SibSp` (Đã qua `StandardScaler`) |
+| **5** | Cha mẹ/Con cái (`Parch`) | `Parch` (Số nguyên) | `Parch` (Đã qua `StandardScaler`) |
+| **6** | Quy mô gia đình (`FamilySize`) | `FamilySize` (Số nguyên) | `FamilySize` (Đã qua `StandardScaler`) |
+| **7** | Đi 1 mình (`IsAlone`) | `IsAlone` ($0, 1$) | `IsAlone` ($0, 1$) |
+| **8** | Số người chung vé (`TicketFrequency`) | `TicketFrequency` (Số nguyên) | `TicketFrequency` (Đã qua `StandardScaler`) |
+| **9** | Giá vé/người (`FarePerPerson`) | `FarePerPerson` (Số thực) | `FarePerPerson` (Đã qua `StandardScaler`) |
+| **10** | Log giá vé (`LogFare`) | `LogFare` (Số thực) | `LogFare` (Đã qua `StandardScaler`) |
+| **11** | Danh xưng (`Title`) | `Title` (Label Encoded: $0..4$ - **1 cột**) | `Title_Mr`, `Title_Miss`, `Title_Mrs`, `Title_Master`, `Title_Rare` (**5 cột**) |
+| **12** | Boong tàu (`Deck`) | `Deck` (Label Encoded: $0..7$ - **1 cột**) | `Deck_A`, `Deck_B`, `Deck_C`, `Deck_D`, `Deck_E`, `Deck_F`, `Deck_G`, `Deck_U` (**8 cột**) |
+| **13** | Cờ có khoang phòng (`HasCabin`) | `HasCabin` ($0, 1$) | `HasCabin` ($0, 1$) |
+| **14** | Cảng lên tàu (`Embarked`) | `Embarked` (Label Encoded: $0, 1, 2$ - **1 cột**) | `Embarked_C`, `Embarked_Q`, `Embarked_S` (**3 cột**) |
+| 🎯 | **TỔNG SỐ ĐẶC TRƯNG ($X$)** | **👉 14 CỘT CỐ ĐỊNH** | **👉 29 CỘT ĐÃ CHUẨN HÓA** |
 
 ---
 
-### 🛡️ 2.3 Nguyên Tắc Vàng Chống Rò Rỉ Dữ Liệu (Strict Anti-Leakage Rules)
+### ⚙️ 2.3 Giải Thích Toán Học Cho Quy Chuẩn Tiền Xử Lý
+
+#### 🌲 1. Tại Sao Mô Hình Cây (RF, XGBoost, LightGBM, CatBoost) Dùng Ma Trận 14 Cột?
+1. **Cơ chế cắt ngưỡng so sánh (Split Thresholds):**
+   * Cây quyết định học quy luật thông qua điều kiện nhị phân: $\text{Nếu } \text{Title} == 3 \rightarrow \text{Master (Bé trai)} \rightarrow \text{Sống}$; $\text{Nếu } \text{Title} == 0 \rightarrow \text{Mr (Đàn ông)} \rightarrow \text{Chết}$.
+   * Chỉ cần 1 cột số nguyên chứa mã $0..4$ là cây đã phân biệt được hoàn hảo từng nhóm.
+2. **Tránh ma trận thưa (Sparsity):**
+   * Nếu dùng One-Hot bung thành 29 cột, ma trận sẽ chứa hơn 70% giá trị $0$. Khi đó, mỗi lần cây phân nhánh sẽ chỉ chia được một tập mẫu rất nhỏ, làm cây bị sâu bất hợp lý và tăng nguy cơ quá khớp (Overfitting).
+3. **Không cần `StandardScaler`:**
+   * Phép so sánh $x_j \le \theta$ bất biến với mọi phép co giãn đơn điệu. Tuổi là $4.0$ hay $-1.82$ thì điểm cắt của cây vẫn không hề thay đổi.
+
+#### 📈 2. Tại Sao Mô Hình Tuyến Tính (Logistic Regression) Bắt Buộc Dùng Ma Trận 29 Cột?
+1. **Bản chất của hàm tuyến tính:**
+   * Logistic Regression tính toán xác suất qua phương trình tổng trọng số:
+     $$z = w_1 \cdot x_1 + w_2 \cdot x_2 + \dots + w_n \cdot x_n + b$$
+   * ❌ *Nếu để `Title` là 1 cột số nguyên ($0, 1, 2, 3, 4$):* Phương trình $w \cdot \text{Title}$ sẽ ép buộc rằng $\text{Master (3)} = 3 \times \text{Mr (1)}$, điều này hoàn toàn sai lệch và vô nghĩa về mặt logic thực tế.
+   * ✅ *Khi dùng One-Hot 29 cột:* Mỗi danh xưng có một công tắc $0/1$ và một trọng số riêng biệt ($w_{\text{Master}} \cdot \text{Title\_Master} + w_{\text{Mr}} \cdot \text{Title\_Mr}$), cho phép mô hình học độc lập tầm ảnh hưởng của từng danh xưng.
+2. **Bắt buộc dùng `StandardScaler` (Z-score: $\mu = 0, \sigma = 1$):**
+   * Trong dữ liệu gốc, `Fare` ($0 \rightarrow 512$) lớn hơn rất nhiều so với `Age` ($0 \rightarrow 80$) và `Sex` ($0/1$).
+   * Nếu không Scale, biến `Fare` sẽ chiếm lĩnh toàn bộ đạo hàm Gradient Descent, làm mô hình không thể hội tụ và khiến hàm phạt Regularization ($L_1 / L_2$) phạt sai lệch trọng số của các biến quan trọng khác.
+
+---
+
+### 🛡️ 2.4 Nguyên Tắc Vàng Chống Rò Rỉ Dữ Liệu (Strict Anti-Leakage Rules)
 
 > [!WARNING] **Tránh Rò Rỉ Dữ Liệu Khi Tiền Xử Lý (No Data Leakage):**
-> 1. **Chỉ `fit` trên Train Fold:** Các phép tính thống kê (Median tuổi theo `Title+Pclass`, Median giá vé, Mode cảng lên tàu, Mean/Std của `StandardScaler`, và từ điển mã hóa `LabelEncoder`) **chỉ được học trên tập huấn luyện của Fold đó**.
+> 1. **Chỉ `fit` trên Train Fold:** Các phép tính thống kê (Median tuổi theo `Title+Pclass`, Median giá vé, Mode cảng lên tàu, Mean/Std của `StandardScaler`, và từ điển mã hóa `LabelEncoder` / `OneHotEncoder`) **chỉ được học trên tập huấn luyện của Fold đó**.
 > 2. **Chỉ `transform` sang Validation Fold và Test Set:** Áp dụng các giá trị đã học được từ Train Fold để điền và biến đổi cho Validation Fold và Test Set, tuyệt đối không dùng toàn bộ dữ liệu Train+Test để tính Mean/Median/Mode trước khi chia Fold.
 
 ---
