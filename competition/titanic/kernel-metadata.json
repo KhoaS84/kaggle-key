@@ -1,0 +1,15 @@
+{
+  "id": "keyshiftf/titanic-machine-learning-pipeline",
+  "title": "Titanic Machine Learning Pipeline",
+  "code_file": "notebooks/titanic_pipeline.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [
+    "titanic"
+  ],
+  "kernel_sources": []
+}
