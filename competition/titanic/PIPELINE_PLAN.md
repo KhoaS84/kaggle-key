@@ -30,13 +30,13 @@ status: Ready for Implementation
 
 ```mermaid
 flowchart TD
-    subgraph DataLayer ["Data Layer"]
-        TrainRaw["train.csv (891)"] --> Loader["Data Ingestion & Validation"]
+    subgraph DataLayer ["1. Data Layer"]
+        TrainRaw["train.csv (891)"] --> Loader["Data Ingestion & Path Detection"]
         TestRaw["test.csv (418)"] --> Loader
     end
 
-    subgraph EDASuite ["EDA & Visualization Engine"]
-        Loader --> EDA["EDA & Data Visualization Suite"]
+    subgraph EDASuite ["2. EDA & Visualization Engine"]
+        Loader --> EDA["EDA & Data Visualization Suite (8 Biểu đồ)"]
         EDA --> V1["Missing Data Matrix & Patterns"]
         EDA --> V2["Univariate & Target Distribution"]
         EDA --> V3["Bivariate Survival Comparisons"]
@@ -44,39 +44,42 @@ flowchart TD
         EDA --> V5["Correlation Heatmap & Skewness Inspection"]
     end
 
-    subgraph FeaturePipeEngine ["Feature Engineering Engine"]
-        EDA --> FeaturePipe["Feature Transformation Pipeline"]
-        FeaturePipe --> F1["Name: Title Extraction & Categorization"]
-        FeaturePipe --> F2["Family: FamilySize, IsAlone, FamilyType"]
-        FeaturePipe --> F3["Cabin: Deck Extraction & HasCabin"]
-        FeaturePipe --> F4["Ticket: Frequency & Group Pricing"]
-        FeaturePipe --> F5["Imputation: Grouped Age by Title/Pclass"]
-        FeaturePipe --> F6["Encoding: One-Hot & Target / Ordinal"]
+    subgraph StatelessPipeEngine ["3. Stateless Feature Extraction (Trước khi chia Fold)"]
+        EDA --> StatelessPipe["Row-Level Feature Extraction Pipeline"]
+        StatelessPipe --> F1["Name: Title Regex -> Static Categorization"]
+        StatelessPipe --> F2["Family: FamilySize = SibSp + Parch + 1 -> IsAlone"]
+        StatelessPipe --> F3["Cabin: Deck Extraction & HasCabin"]
+        StatelessPipe --> F4["Ticket: Frequency on Closed Ship Manifest"]
+        StatelessPipe --> F5["Mapping: Binary Sex & Static Dict Encodings"]
     end
 
-    subgraph ModelingSuite ["Cross-Validation & Modeling"]
-        F1 & F2 & F3 & F4 & F5 & F6 --> SKFold["Stratified 5-Fold Splitter"]
-        SKFold --> M1["Random Forest / Extra Trees"]
-        SKFold --> M2["XGBoost Classifier"]
-        SKFold --> M3["LightGBM Classifier"]
-        SKFold --> M4["CatBoost Classifier"]
-        SKFold --> M5["Logistic Regression Baseline"]
+    subgraph CVModelingSuite ["4. Stratified 5-Fold CV & Leak-Free Modeling"]
+        F1 & F2 & F3 & F4 & F5 --> SKFold["Stratified 5-Fold Splitter"]
+        
+        SKFold --> FoldPipe["<b>Fold-Level Stateful Imputations</b><br>- Fit Age median by Title+Pclass on Train Fold<br>- Fit Fare median & LogFare on Train Fold<br>- Fit Embarked mode on Train Fold<br>- Transform sang Val & Test"]
+        
+        FoldPipe --> M1["Random Forest / Extra Trees"]
+        FoldPipe --> M2["XGBoost Classifier"]
+        FoldPipe --> M3["LightGBM Classifier"]
+        FoldPipe --> M4["CatBoost Classifier"]
+        FoldPipe --> M5["Logistic Regression Baseline"]
     end
 
-    subgraph TuningSuite ["Tuning & Ensembling"]
+    subgraph TuningSuite ["5. Tuning & Ensembling"]
         M1 & M2 & M3 & M4 & M5 --> OOF["Out-Of-Fold OOF Predictions"]
         OOF --> Optuna["Optuna Hyperparameter Tuning"]
         OOF --> Ensemble["Ensemble Combiner: Soft Voting / Stacking Meta-Learner"]
     end
 
-    subgraph DeploymentSuite ["Inference & Deployment"]
-        Ensemble --> PostProcess["Threshold Tuning & Sanity Check"]
+    subgraph DeploymentSuite ["6. Inference & Deployment"]
+        Ensemble --> PostProcess["Threshold Tuning & Sanity Checks"]
         PostProcess --> SubFile["submission.csv (418 rows)"]
         SubFile --> CLI["Kaggle CLI Auto-Submit & Monitoring"]
     end
 
     style EDA fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    style FeaturePipe fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    style StatelessPipe fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    style FoldPipe fill:#ffebee,stroke:#c62828,stroke-width:2px;
     style Ensemble fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     style SubFile fill:#fff3e0,stroke:#e65100,stroke-width:2px;
 ```
@@ -373,33 +376,30 @@ flowchart LR
 * Quản lý đường dẫn dữ liệu, xuất logging và hàm lưu/tải mô hình.
 
 #### 🔹 Module 2: `src/features.py`
-Xây dựng class xử lý `TitanicFeaturePipeline` tuân thủ chuẩn Scikit-Learn Transformer (`fit`, `transform`):
-1. **Title Extraction:** Trích xuất từ `Name` $\rightarrow$ phân loại thành `['Mr', 'Miss', 'Mrs', 'Master', 'Rare']`.
-2. **Family Features:**
-   * $\text{FamilySize} = \text{SibSp} + \text{Parch} + 1$
-   * `IsAlone`: 1 nếu $\text{FamilySize} == 1$ else 0.
-   * `FamilyType`: `Solo` (1), `Small` (2-4), `Large` (5+).
-3. **Age Imputation thông minh:** Điền median của `Age` theo từng nhóm `(Title, Pclass)`.
-4. **Cabin & Deck Extraction:** Lấy chữ cái đầu boong tàu (`A, B, C, D, E, F, G, Missing/U`).
-5. **Ticket & Fare Features:**
-   * `TicketFrequency`: Đếm số hành khách đi chung vé.
-   * $\text{FarePerPerson} = \frac{\text{Fare}}{\text{TicketFrequency}}$.
-   * `LogFare`: $\log(1 + \text{FarePerPerson})$.
-6. **Embarked Imputation:** Điền giá trị phổ biến nhất (`'S'`).
+Xây dựng pipeline xử lý đặc trưng tuân thủ nghiêm ngặt nguyên tắc **Zero Data Leakage** được chia thành 2 giai đoạn:
+1. **Giai đoạn 1 - Trích xuất Phi Trạng Thái (Stateless Extraction):**
+   * **Title Extraction:** Trích xuất từ `Name` $\rightarrow$ ánh xạ từ điển cố định `['Mr': 0, 'Miss': 1, 'Mrs': 2, 'Master': 3, 'Rare': 4]`.
+   * **Family Features:** $\text{FamilySize} = \text{SibSp} + \text{Parch} + 1$, `IsAlone` ($0/1$).
+   * **Cabin & Deck Extraction:** Lấy chữ cái đầu boong tàu (`A..G`, `U`) $\rightarrow$ ánh xạ từ điển cố định và tạo cờ `HasCabin`.
+   * **Ticket Frequency:** Đếm số người chung mã vé trên danh sách kín 1.309 hành khách toàn tàu.
+   * **Sex Mapping:** Nhị phân hóa $0/1$.
+2. **Giai đoạn 2 - Bộ Điền Khuyết Từng Fold (`FoldImputer`):**
+   * Lớp transformer chuyên biệt có phương thức `fit(train_fold)` và `transform(df)`.
+   * Học `Age Median` theo `(Title, Pclass)`, `Fare Median` theo `Pclass` (tính `FarePerPerson` và `LogFare`), và `Embarked Mode` **chỉ từ `train_fold`**.
 
 #### 🔹 Module 3: `src/models.py`
 Đóng gói các thuật toán học máy mạnh mẽ nhất cho dữ liệu bảng:
-* **Logistic Regression:** Chuẩn hóa bằng `StandardScaler`, regularization $C$.
-* **Random Forest Classifier:** `n_estimators=300`, `max_depth=5..7`, `min_samples_split=4`.
-* **Extra Trees Classifier:** Giảm phương sai, tạo độ đa dạng cho ensemble.
-* **LightGBM Classifier:** Xử lý nhanh, hiệu quả cao.
-* **XGBoost Classifier:** `colsample_bytree`, `subsample`, `learning_rate=0.03`.
-* **CatBoost Classifier:** Xử lý tự nhiên các biến phân loại.
+* **Random Forest Classifier:** `n_estimators=300`, `max_depth=6`, `min_samples_split=4`.
+* **Extra Trees Classifier:** Tăng tính ngẫu nhiên, giảm phương sai, tạo độ đa dạng cho ensemble.
+* **LightGBM Classifier:** `n_estimators=250`, `learning_rate=0.03`, xử lý nhanh, hiệu quả cao.
+* **XGBoost Classifier:** `colsample_bytree=0.8`, `subsample=0.8`, `learning_rate=0.03`.
+* **CatBoost Classifier:** Tối ưu hóa trên các đặc trưng danh nghĩa.
+* **Logistic Regression:** Mô hình đối chứng Baseline.
 
-#### 🔹 Module 4: `src/train.py` (K-Fold CV Engine)
+#### 🔹 Module 4: `src/train.py` (K-Fold CV Engine - Zero Leakage)
 * Sử dụng `StratifiedKFold(n_splits=5, shuffle=True, random_state=42)`.
-* **Quy tắc vàng:** Chỉ fit `Imputer` và `Encoder` trên **Train Fold**, sau đó transform sang **Validation Fold** và **Test Set** để triệt tiêu hoàn toàn **Data Leakage**.
-* Tính toán và ghi log điểm OOF (Out-Of-Fold) Accuracy cho từng Fold và trung bình toàn bộ Dataset.
+* **Quy tắc vàng chống rò rỉ:** Khởi tạo `FoldImputer()` mới ở mỗi Fold, chỉ gọi `imputer.fit(train_fold)` rồi `imputer.transform()` sang `train_fold`, `val_fold` và `test_set`.
+* Tính toán và ghi log điểm Out-Of-Fold (OOF) Accuracy cho từng Fold và trung bình toàn bộ 5 Folds.
 
 #### 🔹 Module 5: `src/tune.py` & `src/ensemble.py`
 * **Optuna Tuning:** Tự động tìm bộ siêu tham số tốt nhất tối đa hóa điểm CV Accuracy.
