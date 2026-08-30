@@ -233,11 +233,110 @@ flowchart TD
 
 ---
 
-### 🛡️ 2.4 Nguyên Tắc Vàng Chống Rò Rỉ Dữ Liệu (Strict Anti-Leakage Rules)
+### 🛡️ 2.4 Chuyên Khảo Về Rò Rỉ Dữ Liệu (Data Leakage Deep-Dive & Prevention)
 
-> [!WARNING] **Tránh Rò Rỉ Dữ Liệu Khi Tiền Xử Lý (No Data Leakage):**
-> 1. **Chỉ `fit` trên Train Fold:** Các phép tính thống kê (Median tuổi theo `Title+Pclass`, Median giá vé, Mode cảng lên tàu, Mean/Std của `StandardScaler`, và từ điển mã hóa `LabelEncoder` / `OneHotEncoder`) **chỉ được học trên tập huấn luyện của Fold đó**.
-> 2. **Chỉ `transform` sang Validation Fold và Test Set:** Áp dụng các giá trị đã học được từ Train Fold để điền và biến đổi cho Validation Fold và Test Set, tuyệt đối không dùng toàn bộ dữ liệu Train+Test để tính Mean/Median/Mode trước khi chia Fold.
+#### ❓ 1. Rò Rỉ Dữ Liệu (Data Leakage) Là Gì?
+> [!DANGER] **Bản Chất Của Data Leakage:**
+> **Data Leakage (Rò rỉ dữ liệu)** là hiện tượng thông tin từ bên ngoài tập huấn luyện (cụ thể là từ **Validation Set** hoặc **Test Set**) vô tình lọt vào quá trình tiền xử lý, tính toán thống kê hoặc huấn luyện của mô hình.
+> 
+> * **Hậu quả chết người:** Mô hình tạo ra **"Ảo tưởng sức mạnh" (Overoptimistic Evaluation)**. Điểm số đánh giá nội bộ (CV Accuracy) cao chót vót lên tới **~90% – 95%**, nhưng khi nộp file lên **Kaggle Leaderboard** (hoặc đưa vào môi trường thực tế), điểm số sụt giảm thảm hại xuống **~70% – 75%** do mô hình thực chất chỉ "học lóm đáp án" chứ không có khả năng khái quát hóa.
+
+---
+
+#### 🔍 2. Ba Dạng Rò Rỉ Dữ Liệu Kinh Điển Trong Bài Toán Titanic
+
+```mermaid
+flowchart TD
+    subgraph DANG_1 ["1. Rò Rỉ Điền Khuyết (Imputation Leakage)"]
+        A1["Tính Median Age trên Train + Test hoặc toàn bộ 891 dòng trước khi chia Fold"] --> B1["Tập Validation bị lộ phân phối tuổi cho Train học trước"]
+    end
+
+    subgraph DANG_2 ["2. Rò Rỉ Chuẩn Hóa (Scaling Leakage)"]
+        A2["Gọi scaler.fit_transform(X) trên toàn bộ ma trận X"] --> B2["Mean mu và Std sigma bị pha trộn thông tin của tập Test"]
+    end
+
+    subgraph DANG_3 ["3. Rò Rỉ Nhãn Mục Tiêu (Target Encoding Leakage)"]
+        A3["Dùng nhãn Survived để tính tỷ lệ sống theo nhóm trên cùng 1 Fold"] --> B3["Mô hình ghi nhớ trực tiếp đáp án y của tập kiểm tra"]
+    end
+
+    style DANG_1 fill:#ffebee,stroke:#c62828,stroke-width:2px;
+    style DANG_2 fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    style DANG_3 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+```
+
+---
+
+#### ⚖️ 3. Bảng Đối Chiếu Chi Tiết: "SAI (BỊ RÒ RỈ)" vs. "ĐÚNG (CHỐNG RÒ RỈ TUYỆT ĐỐI)"
+
+| Tình huống tiền xử lý | ❌ Cách Làm Sai (Bị Rò Rỉ Dữ Liệu) | ✅ Cách Làm Đúng (Chống Rò Rỉ Tuyệt Đối) | Tại sao cách làm sai lại nguy hiểm? |
+| :--- | :--- | :--- | :--- |
+| **1. Điền khuyết `Age` theo trung vị nhóm** | Tính bảng `median_age` gộp chung cả tập `train` và `test` (hoặc tính trên toàn bộ 891 dòng trước khi chia Fold). | Chia 5 Fold trước. Ở mỗi Fold, **chỉ tính `median_age` trên 80% `train_fold`**, sau đó áp bảng này để điền cho 20% `val_fold` và `test_set`. | Trong thực tế, dữ liệu tương lai chưa xuất hiện để bạn tính trung vị. Nếu gộp test vào tính, phân phối tuổi của test đã "mớm" cho train học. |
+| **2. Chuẩn hóa `StandardScaler` cho Logistic Regression** | `scaler = StandardScaler()`<br>`X_scaled = scaler.fit_transform(X)` (Fit toàn bộ bảng trước khi Cross-Validation). | Ở mỗi Fold:<br>`scaler.fit(X_train_fold)`<br>`X_train = scaler.transform(X_train_fold)`<br>`X_val = scaler.transform(X_val_fold)` | $\mu$ và $\sigma$ của tập Validation bị rò rỉ vào tập Train, khiến mô hình tính toán sai lệch phương sai thực tế. |
+| **3. Điền khuyết `Embarked`** | Tìm Mode (giá trị phổ biến nhất) trên toàn bộ dữ liệu Train + Test $\rightarrow$ ra `'S'`. | Chỉ tìm Mode trên `train_fold` $\rightarrow$ lưu giá trị `'S'` lại $\rightarrow$ dùng `'S'` để điền cho `val_fold` và `test_set`. | Bảo toàn tính cô lập 100% của tập Validation/Test. |
+| **4. Mã hóa `LabelEncoder`** | Gọi `le.fit(X_all['Deck'])` trên cả Train và Test. | Khởi tạo từ điển cố định trước (ví dụ mapping cứng: `{'A':0, 'B':1...}`) hoặc `fit` trên `train_fold`, các giá trị mới lạ ở Test được gán mã `Unknown (-1)`. | Tránh việc mô hình biết trước danh sách toàn bộ các giá trị phân loại hiếm xuất hiện ở tập Test. |
+
+---
+
+#### 💻 4. Minh Họa Bằng Code Python: Code Xấu (Leak) vs. Code Chuẩn (No-Leak)
+
+##### ❌ VÍ DỤ 1: CODE SAI KINH ĐIỂN (Gây Rò Rỉ Toàn Diện)
+```python
+# ==========================================
+# ❌ CODE SAI: Tiền xử lý TRƯỚC KHI chia Fold
+# ==========================================
+# 1. Rò rỉ điền khuyết: Tính Median trên toàn bộ tập train
+df['Age'] = df.groupby(['Title', 'Pclass'])['Age'].transform(lambda x: x.fillna(x.median()))
+
+# 2. Rò rỉ chuẩn hóa: Fit StandardScaler trên toàn bộ bảng
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(df[numerical_cols])  # LỘ THÔNG TIN MEAN/STD CỦA VAL CHO TRAIN!
+
+# 3. Sau khi đã bị rò rỉ mới chia Fold -> Điểm CV cao ảo!
+for train_idx, val_idx in skf.split(X_scaled, y):
+    model.fit(X_scaled[train_idx], y[train_idx])
+    # Đánh giá trên val_idx này đã KHÔNG CÒN TRONG SẠCH vì X_scaled đã bị nhiễm thông tin từ trước!
+```
+
+##### ✅ VÍ DỤ 2: CODE ĐÚNG CHUẨN KAGGLE MASTER (Chống Rò Rỉ 100%)
+```python
+# ==========================================
+# ✅ CODE ĐÚNG: Chia Fold trước, Chỉ FIT trên Train Fold
+# ==========================================
+for fold, (train_idx, val_idx) in enumerate(skf.split(df, df['Survived'])):
+    train_fold = df.iloc[train_idx].copy()
+    val_fold   = df.iloc[val_idx].copy()
+    
+    # 1. Học quy luật điền khuyết CHỈ TỪ TRAIN FOLD
+    age_medians = train_fold.groupby(['Title', 'Pclass'])['Age'].median()
+    global_median = train_fold['Age'].median()
+    
+    # Hàm điền khuyết chỉ dùng tri thức học được từ train_fold
+    def impute_age(row):
+        if pd.isna(row['Age']):
+            return age_medians.get((row['Title'], row['Pclass']), global_median)
+        return row['Age']
+    
+    train_fold['Age'] = train_fold.apply(impute_age, axis=1)
+    val_fold['Age']   = val_fold.apply(impute_age, axis=1)  # TRANSFORM sang Val
+    
+    # 2. Học tỷ lệ chuẩn hóa CHỈ TỪ TRAIN FOLD
+    scaler = StandardScaler()
+    train_fold[num_cols] = scaler.fit_transform(train_fold[num_cols]) # FIT + TRANSFORM Train
+    val_fold[num_cols]   = scaler.transform(val_fold[num_cols])       # CHỈ TRANSFORM Val
+    
+    # 3. Huấn luyện và kiểm thử hoàn toàn độc lập
+    model.fit(train_fold[features], train_fold['Survived'])
+    oof_preds[val_idx] = model.predict_proba(val_fold[features])[:, 1]
+    # Điểm đánh giá ở đây là CHÍNH XÁC VÀ ĐÁNG TIN CẬY 100%!
+```
+
+---
+
+#### 🏆 5. Tóm Lược 2 Nguyên Tắc Vàng Bất Di Bất Dịch:
+
+> [!TIP] **2 Thần Chú Chống Rò Rỉ Dữ Liệu:**
+> 1. **Mọi hàm `.fit()` (hoặc tính Mean, Median, Mode, Min, Max, Quantile) CHỈ ĐƯỢC PHÉP CHẠY TRÊN `train_fold`.**
+> 2. **Tập `val_fold` và `test_set` CHỈ ĐƯỢC PHÉP CHẠY HÀM `.transform()` (áp dụng các con số đã học từ `train_fold`, không được tự sinh ra số mới).**
 
 ---
 
@@ -246,3 +345,4 @@ flowchart TD
 * [[OVERVIEW.md]]: Mục tiêu và tiêu chí đánh giá Accuracy.
 * [[RULES.md]]: Quy định nộp bài và liêm chính dữ liệu.
 * [[README_VI.md]]: Cẩm nang tổng quan.
+
