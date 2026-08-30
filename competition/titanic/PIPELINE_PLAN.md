@@ -349,6 +349,19 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 
 ---
 
+### 📚 4.4 Cơ Sở Khoa Học & Bài Báo Nền Tảng Về Stratified Cross-Validation
+
+Phương pháp **Stratified K-Fold Cross-Validation** (Kiểm định chéo phân tầng) được chứng minh toán học và thực nghiệm là phương pháp tốt nhất để ước lượng độ chính xác và lựa chọn mô hình học máy:
+
+* **Tác giả & Tác phẩm:** Ron Kohavi (1995). *"A Study of Cross-Validation and Bootstrap for Accuracy Estimation and Model Selection"*. *Proceedings of the 14th International Joint Conference on Artificial Intelligence (IJCAI 1995)*, Vol. 14, No. 2, pp. 1137–1145.
+* 🌐 **Đường dẫn chính:** [Semantic Scholar (Corpus ID: 7701548)](https://www.semanticscholar.org/paper/A-Study-of-Cross-Validation-and-Bootstrap-for-and-Kohavi/7d6a59ec11cfae500cc662b66236b2f0a5efb266)
+* 📥 **Bản PDF trực tiếp:** [Stanford AI Lab PDF](https://ai.stanford.edu/~ronnyk/accEst.pdf) | [IJCAI Official PDF](https://www.ijcai.org/Proceedings/95-2/Papers/016.pdf)
+
+> [!NOTE] **Kết Luận Đột Phá Của Bài Báo Kohavi (1995):**
+> Nghiên cứu của Kohavi chỉ ra rằng việc **phân tầng (Stratification - bảo toàn tỷ lệ phân phối nhãn mục tiêu trong từng Fold)** giúp giảm đáng kể cả độ chệch (Bias) lẫn phương sai (Variance) so với K-Fold ngẫu nhiên thông thường và phương pháp Bootstrap, trở thành tiêu chuẩn vàng bất biến trong khoa học dữ liệu và thi đấu Kaggle.
+
+---
+
 ## 🔄 5. Lộ Trình Triển Khai Theo Giai Đoạn (Pipeline Execution Flow)
 
 ```mermaid
@@ -768,5 +781,7 @@ kaggle competitions leaderboard titanic --show
 ## 🔗 9. Liên Kết Tài Liệu Tham Chiếu
 * [[OVERVIEW.md]]: Mục tiêu và tiêu chí đánh giá Accuracy.
 * [[RULES.md]]: Quy định nộp bài và liêm chính dữ liệu.
-* [[DATA_DICTIONARY.md]]: Bảng giải nghĩa từng trường dữ liệu và tỷ lệ sống sót.
+* [[DATA_DICTIONARY.md]]: Bảng giải nghĩa từng trường dữ liệu và quy trình tiền xử lý chống rò rỉ.
 * [[README_VI.md]]: Cẩm nang tổng quan.
+* 📄 **Bài báo gốc Stratified K-Fold:** Ron Kohavi (1995) - [Semantic Scholar](https://www.semanticscholar.org/paper/A-Study-of-Cross-Validation-and-Bootstrap-for-and-Kohavi/7d6a59ec11cfae500cc662b66236b2f0a5efb266) | [Bản PDF trực tiếp (Stanford AI Lab)](https://ai.stanford.edu/~ronnyk/accEst.pdf)
+

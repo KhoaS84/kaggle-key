@@ -355,4 +355,6 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(df, df['Survived'])):
 * [[OVERVIEW.md]]: Mục tiêu và tiêu chí đánh giá Accuracy.
 * [[RULES.md]]: Quy định nộp bài và liêm chính dữ liệu.
 * [[README_VI.md]]: Cẩm nang tổng quan.
+* 📄 **Bài báo gốc Stratified K-Fold:** Ron Kohavi (1995) - [Semantic Scholar](https://www.semanticscholar.org/paper/A-Study-of-Cross-Validation-and-Bootstrap-for-and-Kohavi/7d6a59ec11cfae500cc662b66236b2f0a5efb266) | [Bản PDF trực tiếp (Stanford AI Lab)](https://ai.stanford.edu/~ronnyk/accEst.pdf)
+
 
