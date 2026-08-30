@@ -124,39 +124,49 @@ Tài liệu này phân tích chi tiết từng thuộc tính trong bộ dữ li�
 
 ---
 
-## 2. Quy Trình Tiền Xử Lý Dữ Liệu Cho Các Mô Hình Đề Xuất (Data Preprocessing Pipeline)
+## 2. Quy Trình Tiền Xử Lý Dữ Liệu Chống Rò Rỉ Cho Các Mô Hình (Leak-Free Preprocessing Pipeline)
 
 ```mermaid
 flowchart TD
-    subgraph RawData ["Thuộc Tính Thô (Raw Data)"]
+    subgraph RawData ["1. Dữ Liệu Thô (Raw Data)"]
         Raw_ID["PassengerId"]
         Raw_Cat["Sex, Embarked, Pclass"]
         Raw_Text["Name, Cabin, Ticket"]
         Raw_Num["Age, Fare, SibSp, Parch"]
     end
 
-    subgraph Preprocessing ["Tiền Xử Lý & Trích Xuất (Preprocessing & Feature Extraction)"]
+    subgraph StatelessTier ["2. Tầng Trích Xuất Phi Trạng Thái (Stateless Extraction - Trước khi chia Fold)"]
         Raw_ID --> DropID["Loại bỏ khỏi tập X (Chỉ dùng làm Key nộp bài)"]
-        Raw_Text --> FE_Name["Trích xuất Title: Mr, Miss, Mrs, Master, Rare"]
-        Raw_Text --> FE_Cabin["Trích xuất Deck A-G/U + Cờ HasCabin"]
-        Raw_Text --> FE_Ticket["Đếm TicketFrequency"]
-        
-        Raw_Num & FE_Name --> Imp_Age["Grouped Median Age by Title + Pclass"]
-        Raw_Num & FE_Ticket --> Calc_Fare["FarePerPerson = Fare / TicketFrequency -> LogFare"]
+        Raw_Text --> FE_Name["Trích xuất Title từ Name (Regex) -> Map từ điển tĩnh"]
+        Raw_Text --> FE_Cabin["Trích xuất Deck từ Cabin -> Map từ điển tĩnh + Cờ HasCabin"]
+        Raw_Text --> FE_Ticket["Đếm TicketFrequency (Trên danh sách 1.309 khách toàn tàu)"]
         Raw_Num --> Calc_Fam["FamilySize = SibSp + Parch + 1 -> IsAlone"]
-        Raw_Cat --> Imp_Emb["Mode Imputation 'S'"]
+        Raw_Cat --> Map_Sex["Nhị phân hóa Sex (0/1)"]
     end
 
-    subgraph ModelFormatting ["Định Dạng Cho Từng Họ Mô Hình (Model-Specific Formatting)"]
-        Imp_Age & Calc_Fare & Calc_Fam & FE_Cabin & Imp_Emb & FE_Name --> Split{"Nhóm Mô Hình"}
+    subgraph FoldBoundary ["3. Ranh Giới Chống Rò Rỉ Stratified 5-Fold (Strict Anti-Leakage Boundary)"]
+        StatelessTier --> SKFold["Stratified 5-Fold Splitter"]
         
-        Split -->|Mô Hình Cây: RF, ExtraTrees, XGB, LGBM, CatBoost| TreePipe["<b>1. Tree-based Pipeline (14 Cột)</b><br>- Label Encoding biến chữ (Title, Deck, Embarked)<br>- Giữ nguyên thang đo tự nhiên<br>- Không cần StandardScaler"]
-        Split -->|Mô Hình Tuyến Tính: Logistic Regression / Meta-Learner| LinearPipe["<b>2. Linear Pipeline (29 Cột)</b><br>- One-Hot Encoding biến rời rạc (Bung 5 Title, 8 Deck, 3 Embarked, 3 Pclass)<br>- Bắt buộc StandardScaler trên toàn bộ biến số<br>- Chuẩn hóa Z-score mu=0, sigma=1"]
+        SKFold --> Train_Fold["<b>Train Fold (80%)</b><br>Học (FIT):<br>- Median Age theo Title+Pclass<br>- Median Fare theo Pclass<br>- Mode Embarked = 'S'<br>- Mean/Std StandardScaler"]
+        SKFold --> Val_Fold["<b>Validation Fold (20%)</b><br>Không học gì cả<br>(Chỉ TRANSFORM)"]
+        SKFold --> Test_Set["<b>Test Set (418 dòng)</b><br>Không học gì cả<br>(Chỉ TRANSFORM)"]
+        
+        Train_Fold -->|Áp dụng thông số thống kê| Val_Fold
+        Train_Fold -->|Áp dụng thông số thống kê| Test_Set
+    end
+
+    subgraph ModelFormatting ["4. Định Dạng Cho Từng Họ Mô Hình (Model-Specific Formatting)"]
+        FoldBoundary --> Split{"Định dạng ma trận X"}
+        
+        Split -->|Mô Hình Cây: RF, ExtraTrees, XGB, LGBM, CatBoost| TreePipe["<b>1. Tree-based Pipeline (14 Cột)</b><br>- Giữ Label Encoding 0..n<br>- Giữ nguyên thang đo tự nhiên<br>- Không cần StandardScaler"]
+        Split -->|Mô Hình Tuyến Tính: Logistic Regression| LinearPipe["<b>2. Linear Pipeline (29 Cột)</b><br>- One-Hot Encoding biến rời rạc<br>- Bắt buộc StandardScaler trên toàn bộ biến số<br>- Chuẩn hóa Z-score mu=0, sigma=1"]
     end
 
     TreePipe --> Output_Tree["Ma trận X_tree (14 features)"]
     LinearPipe --> Output_Linear["Ma trận X_linear (29 features scaled)"]
     
+    style StatelessTier fill:#e3f2fd,stroke:#1565c0,stroke-width:2px;
+    style FoldBoundary fill:#ffebee,stroke:#c62828,stroke-width:2px;
     style TreePipe fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
     style LinearPipe fill:#fff3e0,stroke:#e65100,stroke-width:2px;
 ```
