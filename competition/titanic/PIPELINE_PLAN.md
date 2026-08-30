@@ -521,71 +521,67 @@ plt.show()
 
 ---
 
-### 🔹 Phần 3: Kỹ Thuật Trích Xuất Đặc Trưng (Feature Engineering)
-```python
-from sklearn.preprocessing import LabelEncoder
+### 🔹 Phần 3: Kỹ Thuật Trích Xuất Đặc Trưng (Stateless Feature Extraction)
 
-def build_features(train, test):
-    df = pd.concat([train, test], sort=False).reset_index(drop=True)
+> [!TIP] **Nguyên Tắc Chống Rò Rỉ Ở Phần 3:**
+> Ở bước này, ta **chỉ thực hiện các phép trích xuất độc lập từng dòng** (Regex chuỗi, phép cộng trừ số học, và từ điển ánh xạ cố định). Toàn bộ các phép tính thống kê (`Median Age`, `Median Fare`, `Mode Embarked`) sẽ được **chuyển sang Phần 4 để tính nghiêm ngặt bên trong từng Fold**!
+
+```python
+import re
+
+# 1. Từ điển ánh xạ danh mục cố định (Stateless Mapping - Zero Leakage)
+title_mapping = {
+    'Mr': 0, 'Miss': 1, 'Mrs': 2, 'Master': 3,
+    'Mlle': 1, 'Ms': 1, 'Mme': 2,
+    'Dr': 4, 'Rev': 4, 'Col': 4, 'Major': 4, 'Capt': 4,
+    'Countess': 4, 'Don': 4, 'Jonkheer': 4, 'Lady': 4, 'Sir': 4, 'Dona': 4
+}
+sex_mapping = {'male': 0, 'female': 1}
+deck_mapping = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6, 'U': 7}
+embarked_mapping = {'S': 0, 'C': 1, 'Q': 2}
+
+# Đếm tần suất mã vé trên toàn bộ con tàu 1.309 người (Closed Ship Manifest)
+all_tickets = pd.concat([train_df['Ticket'], test_df['Ticket']], axis=0)
+ticket_counts = all_tickets.value_counts()
+
+def extract_basic_features(df):
+    """
+    Hàm trích xuất đặc trưng cơ bản (Không phụ thuộc vào phân phối toàn cục)
+    """
+    out = df.copy()
     
-    # 1. Trích xuất danh xưng Title từ cột Name
-    df['Title'] = df['Name'].apply(lambda x: re.search(r' ([A-Za-z]+)\.', x).group(1) if re.search(r' ([A-Za-z]+)\.', x) else 'None')
-    title_mapping = {
-        'Mr': 'Mr', 'Miss': 'Miss', 'Mrs': 'Mrs', 'Master': 'Master',
-        'Mlle': 'Miss', 'Ms': 'Miss', 'Mme': 'Mrs',
-        'Dr': 'Rare', 'Rev': 'Rare', 'Col': 'Rare', 'Major': 'Rare', 'Capt': 'Rare',
-        'Countess': 'Rare', 'Don': 'Rare', 'Jonkheer': 'Rare', 'Lady': 'Rare', 'Sir': 'Rare', 'Dona': 'Rare'
-    }
-    df['Title'] = df['Title'].map(title_mapping).fillna('Rare')
+    # 1. Trích xuất danh xưng Title từ Name
+    out['Title'] = out['Name'].apply(lambda x: re.search(r' ([A-Za-z]+)\.', x).group(1) if re.search(r' ([A-Za-z]+)\.', x) else 'None')
+    out['Title'] = out['Title'].map(title_mapping).fillna(4).astype(int)
     
-    # 2. Đặc trưng gia đình: FamilySize & IsAlone
-    df['FamilySize'] = df['SibSp'] + df['Parch'] + 1
-    df['IsAlone'] = (df['FamilySize'] == 1).astype(int)
+    # 2. Nhị phân hóa giới tính Sex
+    out['Sex'] = out['Sex'].map(sex_mapping).fillna(0).astype(int)
     
-    # 3. Điền khuyết Age thông minh theo median của nhóm (Title, Pclass)
-    age_medians = df.groupby(['Title', 'Pclass'])['Age'].transform('median')
-    df['Age'] = df['Age'].fillna(age_medians).fillna(df['Age'].median())
+    # 3. Đặc trưng gia đình: FamilySize & IsAlone
+    out['FamilySize'] = out['SibSp'] + out['Parch'] + 1
+    out['IsAlone'] = (out['FamilySize'] == 1).astype(int)
     
     # 4. Trích xuất boong tàu Deck từ Cabin
-    df['Deck'] = df['Cabin'].apply(lambda x: str(x)[0] if pd.notnull(x) else 'U')
-    df['Deck'] = df['Deck'].replace({'T': 'U'})
-    df['HasCabin'] = (df['Deck'] != 'U').astype(int)
+    out['Deck'] = out['Cabin'].apply(lambda x: str(x)[0] if pd.notnull(x) else 'U')
+    out['Deck'] = out['Deck'].replace({'T': 'U'})
+    out['HasCabin'] = (out['Deck'] != 'U').astype(int)
+    out['Deck'] = out['Deck'].map(deck_mapping).fillna(7).astype(int)
     
-    # 5. Đặc trưng vé & giá vé theo đầu người
-    ticket_counts = df['Ticket'].value_counts()
-    df['TicketFrequency'] = df['Ticket'].map(ticket_counts)
-    df['Fare'] = df['Fare'].fillna(df.groupby('Pclass')['Fare'].transform('median'))
-    df['FarePerPerson'] = df['Fare'] / df['TicketFrequency']
-    df['LogFare'] = np.log1p(df['FarePerPerson'])
+    # 5. Tần suất mã vé TicketFrequency
+    out['TicketFrequency'] = out['Ticket'].map(ticket_counts).fillna(1).astype(int)
     
-    # 6. Điền khuyết Embarked bằng Mode ('S')
-    df['Embarked'] = df['Embarked'].fillna(df['Embarked'].mode()[0])
-    
-    # 7. Mã hóa biến phân loại (Label Encoding)
-    cat_cols = ['Sex', 'Embarked', 'Title', 'Deck']
-    for col in cat_cols:
-        le = LabelEncoder()
-        df[col] = le.fit_transform(df[col])
-        
-    feature_cols = [
-        'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'FamilySize', 'IsAlone',
-        'LogFare', 'FarePerPerson', 'Embarked', 'Title', 'Deck', 'HasCabin', 'TicketFrequency'
-    ]
-    
-    train_processed = df[df['Survived'].notnull()].copy()
-    test_processed = df[df['Survived'].isnull()].copy()
-    train_processed['Survived'] = train_processed['Survived'].astype(int)
-    
-    return train_processed, test_processed, feature_cols
+    return out
 
-train_processed, test_processed, feature_names = build_features(train_df, test_df)
-print(f'Engineered Features ({len(feature_names)}): {feature_names}')
-train_processed[feature_names].head()
+train_base = extract_basic_features(train_df)
+test_base = extract_basic_features(test_df)
+print(f'Train Base Shape: {train_base.shape} | Test Base Shape: {test_base.shape}')
+train_base.head()
 ```
 
 ---
 
-### 🔹 Phần 4: Vòng Lặp Huấn Luyện Stratified 5-Fold Cross-Validation
+### 🔹 Phần 4: Vòng Lặp Huấn Luyện Stratified 5-Fold Cross-Validation (Strict Zero-Leakage)
+
 ```python
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
@@ -594,10 +590,10 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 
-# Chuẩn bị dữ liệu
-X = train_processed[feature_names].values
-y = train_processed['Survived'].values
-X_test = test_processed[feature_names].values
+feature_cols = [
+    'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'FamilySize', 'IsAlone',
+    'LogFare', 'FarePerPerson', 'Embarked', 'Title', 'Deck', 'HasCabin', 'TicketFrequency'
+]
 
 N_SPLITS = 5
 skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
@@ -612,13 +608,55 @@ def get_models():
     }
 
 model_names = list(get_models().keys())
-oof_predictions = {name: np.zeros(len(train_processed)) for name in model_names}
-test_predictions = {name: np.zeros(len(test_processed)) for name in model_names}
+oof_predictions = {name: np.zeros(len(train_base)) for name in model_names}
+test_predictions = {name: np.zeros(len(test_base)) for name in model_names}
 
-for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
-    X_train, y_train = X[train_idx], y[train_idx]
-    X_val, y_val = X[val_idx], y[val_idx]
+for fold, (train_idx, val_idx) in enumerate(skf.split(train_base, train_base['Survived'])):
+    # 1. Tách tập Train Fold và Val Fold
+    train_fold = train_base.iloc[train_idx].copy()
+    val_fold   = train_base.iloc[val_idx].copy()
+    test_fold  = test_base.copy()
     
+    # 2. HỌC QUY LUẬT THỐNG KÊ (FIT) - CHỈ TỪ TRAIN FOLD
+    # a. Học trung vị tuổi theo (Title, Pclass)
+    age_medians = train_fold.groupby(['Title', 'Pclass'])['Age'].median().to_dict()
+    global_age_median = train_fold['Age'].median()
+    
+    # b. Học trung vị giá vé theo Pclass
+    fare_medians = train_fold.groupby('Pclass')['Fare'].median().to_dict()
+    global_fare_median = train_fold['Fare'].median()
+    
+    # c. Học Mode của cảng lên tàu
+    embarked_mode = train_fold['Embarked'].dropna().mode()[0]
+    
+    # 3. BIẾN ĐỔI (TRANSFORM) SANG TRAIN FOLD, VAL FOLD & TEST
+    def apply_imputations(df):
+        out = df.copy()
+        # Điền tuổi
+        out['Age'] = out.apply(
+            lambda r: age_medians.get((r['Title'], r['Pclass']), global_age_median) if pd.isna(r['Age']) else r['Age'],
+            axis=1
+        )
+        # Điền giá vé & tính FarePerPerson, LogFare
+        out['Fare'] = out.apply(
+            lambda r: fare_medians.get(r['Pclass'], global_fare_median) if pd.isna(r['Fare']) else r['Fare'],
+            axis=1
+        )
+        out['FarePerPerson'] = out['Fare'] / out['TicketFrequency']
+        out['LogFare'] = np.log1p(out['FarePerPerson'])
+        # Điền cảng và mã hóa sang số
+        out['Embarked'] = out['Embarked'].fillna(embarked_mode).map(embarked_mapping).fillna(0).astype(int)
+        return out
+    
+    train_fold = apply_imputations(train_fold)
+    val_fold   = apply_imputations(val_fold)
+    test_fold  = apply_imputations(test_fold)
+    
+    X_train, y_train = train_fold[feature_cols].values, train_fold['Survived'].values
+    X_val, y_val     = val_fold[feature_cols].values, val_fold['Survived'].values
+    X_test           = test_fold[feature_cols].values
+    
+    # 4. Huấn luyện 5 mô hình trên Train Fold sạch
     models = get_models()
     for name, model in models.items():
         model.fit(X_train, y_train)
@@ -626,9 +664,9 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(X, y)):
         oof_predictions[name][val_idx] = val_preds_prob
         test_predictions[name] += model.predict_proba(X_test)[:, 1] / N_SPLITS
 
-print('=== OUT-OF-FOLD (OOF) ACCURACY BY MODEL ===')
+print('=== OUT-OF-FOLD (OOF) ACCURACY BY MODEL (ZERO-LEAKAGE) ===')
 for name in model_names:
-    acc = accuracy_score(y, (oof_predictions[name] >= 0.5).astype(int))
+    acc = accuracy_score(train_base['Survived'], (oof_predictions[name] >= 0.5).astype(int))
     print(f'{name:15s}: OOF Accuracy = {acc:.4f} ({acc*100:.2f}%)')
 ```
 
@@ -647,22 +685,23 @@ weights = {
     'CatBoost': 0.20
 }
 
-oof_ensemble = np.zeros(len(train_processed))
-test_ensemble = np.zeros(len(test_processed))
+oof_ensemble = np.zeros(len(train_base))
+test_ensemble = np.zeros(len(test_base))
+y_true = train_base['Survived'].values
 
 for name, w in weights.items():
     oof_ensemble += w * oof_predictions[name]
     test_ensemble += w * test_predictions[name]
 
 # Đánh giá điểm tổng thể
-ensemble_acc = accuracy_score(y, (oof_ensemble >= 0.5).astype(int))
+ensemble_acc = accuracy_score(y_true, (oof_ensemble >= 0.5).astype(int))
 print(f'⭐ ENSEMBLE OOF ACCURACY: {ensemble_acc:.4f} ({ensemble_acc*100:.2f}%)')
 
 print('\n=== CONFUSION MATRIX ===')
-print(confusion_matrix(y, (oof_ensemble >= 0.5).astype(int)))
+print(confusion_matrix(y_true, (oof_ensemble >= 0.5).astype(int)))
 
 print('\n=== CLASSIFICATION REPORT ===')
-print(classification_report(y, (oof_ensemble >= 0.5).astype(int)))
+print(classification_report(y_true, (oof_ensemble >= 0.5).astype(int)))
 ```
 
 ---
