@@ -461,7 +461,11 @@ SEED = 42
 np.random.seed(SEED)
 
 # 2. Tự động nhận diện đường dẫn (Kaggle Cloud vs Máy Local)
-if os.path.exists('/kaggle/input/titanic/train.csv'):
+if os.path.exists('/kaggle/input/competitions/titanic/train.csv'):
+    TRAIN_PATH = '/kaggle/input/competitions/titanic/train.csv'
+    TEST_PATH = '/kaggle/input/competitions/titanic/test.csv'
+    OUTPUT_PATH = '/kaggle/working/submission.csv'
+elif os.path.exists('/kaggle/input/titanic/train.csv'):
     TRAIN_PATH = '/kaggle/input/titanic/train.csv'
     TEST_PATH = '/kaggle/input/titanic/test.csv'
     OUTPUT_PATH = '/kaggle/working/submission.csv'
