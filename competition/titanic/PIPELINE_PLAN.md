@@ -274,16 +274,35 @@ graph TD
 
 ### ⚙️ 4.3 Phân Tích Cấu Hình Siêu Tham Số (Hyperparameters) & Cơ Chế Sử Dụng Mô Hình Trong Code
 
-Trong hàm `get_models()` ở Mục 6.4, các mô hình từ các thư viện chuẩn công nghiệp (`scikit-learn`, `xgboost`, `lightgbm`, `catboost`) được thiết lập với các siêu tham số tối ưu hóa chặt chẽ cho bài toán Titanic (891 dòng):
+Trong hàm `get_models()` ở Mục 6.4, 6 mô hình từ các thư viện chuẩn công nghiệp (`scikit-learn`, `xgboost`, `lightgbm`, `catboost`) được thiết lập với các siêu tham số tối ưu hóa chặt chẽ cho bài toán Titanic (891 dòng):
 
 ```python
+# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Bung One-Hot & Chuẩn hóa Z-score)
+cat_cols_ohe = ['Pclass', 'Title', 'Deck', 'Embarked']
+num_cols_scale = ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']
+pass_cols = ['Sex', 'IsAlone', 'HasCabin']
+
+def get_linear_pipeline():
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_ohe),
+            ('num', StandardScaler(), num_cols_scale),
+            ('pass', 'passthrough', pass_cols)
+        ]
+    )
+    return Pipeline([
+        ('prep', preprocessor),
+        ('clf', LogisticRegression(C=0.1, max_iter=1000, random_state=SEED))
+    ])
+
 def get_models():
     return {
         'RandomForest': RandomForestClassifier(n_estimators=300, max_depth=6, min_samples_split=4, random_state=SEED),
         'ExtraTrees': ExtraTreesClassifier(n_estimators=300, max_depth=6, min_samples_split=4, random_state=SEED),
         'XGBoost': XGBClassifier(n_estimators=250, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, eval_metric='logloss', random_state=SEED),
         'LightGBM': LGBMClassifier(n_estimators=250, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, verbose=-1, random_state=SEED),
-        'CatBoost': CatBoostClassifier(iterations=300, depth=4, learning_rate=0.03, verbose=0, random_seed=SEED)
+        'CatBoost': CatBoostClassifier(iterations=300, depth=4, learning_rate=0.03, verbose=0, random_seed=SEED),
+        'LogisticRegression': get_linear_pipeline()
     }
 ```
 
@@ -302,6 +321,9 @@ def get_models():
 | | `colsample_bytree` | `0.8` | **Tỷ lệ lấy mẫu cột (Feature subsampling).** Mỗi cây chỉ được nhìn 80% số cột (11/14 cột). Giúp ngăn ngừa việc cột quá mạnh (`Sex`) chi phối toàn bộ tất cả các cây. |
 | | `eval_metric` | `'logloss'` | **Hàm mất mát đánh giá (Binary Cross-Entropy).** Đo lường mức độ tự tin của xác suất dự đoán $P(\text{Survived}=1)$ thay vì chỉ nhìn nhãn thô $0/1$. |
 | | `verbose` | `-1` / `0` | **Tắt thông báo rác (Silent mode).** Ngăn thư viện in hàng trăm dòng tiến độ lặp ra màn hình, giữ notebook luôn sạch sẽ, dễ theo dõi. |
+| **Logistic Regression** | `C` | `0.1` | **Hệ số nghịch đảo của Regularization $L_2$ ($C = 1/\lambda$).** Giá trị nhỏ $C=0.1$ giúp phạt mạnh các trọng số quá lớn, chống Overfitting hiệu quả trên tập dữ liệu nhỏ 891 dòng. |
+| | `max_iter` | `1000` | **Số vòng lặp tối đa của bộ giải L-BFGS.** Đảm bảo mô hình tìm được điểm hội tụ toàn cục tốt nhất. |
+| | `ColumnTransformer` & `Pipeline` | `29 Cột` | **Đóng gói chuẩn hóa tự động.** Bung One-Hot 4 biến danh mục (`cat_cols_ohe`) + Scale Z-score 7 biến số (`num_cols_scale`) khép kín trong từng Fold, triệt tiêu 100% rò rỉ dữ liệu. |
 
 ---
 
@@ -673,11 +695,15 @@ plt.show()
 
 ### 🔹 Phần 4: Vòng Lặp Huấn Luyện Stratified 5-Fold Cross-Validation (Strict Zero-Leakage)
 
-#### 4.1 Huấn luyện 5 mô hình với Stratified 5-Fold Cross-Validation (Zero-Leakage):
+#### 4.1 Huấn luyện 6 mô hình với Stratified 5-Fold Cross-Validation (Zero-Leakage):
 ```python
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
@@ -686,6 +712,24 @@ feature_cols = [
     'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'FamilySize', 'IsAlone',
     'LogFare', 'FarePerPerson', 'Embarked', 'Title', 'Deck', 'HasCabin', 'TicketFrequency'
 ]
+
+# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Bung One-Hot & Chuẩn hóa Z-score)
+cat_cols_ohe = ['Pclass', 'Title', 'Deck', 'Embarked']
+num_cols_scale = ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']
+pass_cols = ['Sex', 'IsAlone', 'HasCabin']
+
+def get_linear_pipeline():
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_ohe),
+            ('num', StandardScaler(), num_cols_scale),
+            ('pass', 'passthrough', pass_cols)
+        ]
+    )
+    return Pipeline([
+        ('prep', preprocessor),
+        ('clf', LogisticRegression(C=0.1, max_iter=1000, random_state=SEED))
+    ])
 
 N_SPLITS = 5
 skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
@@ -696,7 +740,8 @@ def get_models():
         'ExtraTrees': ExtraTreesClassifier(n_estimators=300, max_depth=6, min_samples_split=4, random_state=SEED),
         'XGBoost': XGBClassifier(n_estimators=250, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, eval_metric='logloss', random_state=SEED),
         'LightGBM': LGBMClassifier(n_estimators=250, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, verbose=-1, random_state=SEED),
-        'CatBoost': CatBoostClassifier(iterations=300, depth=4, learning_rate=0.03, verbose=0, random_seed=SEED)
+        'CatBoost': CatBoostClassifier(iterations=300, depth=4, learning_rate=0.03, verbose=0, random_seed=SEED),
+        'LogisticRegression': get_linear_pipeline()
     }
 
 model_names = list(get_models().keys())
@@ -744,11 +789,11 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_base, train_base['Su
     val_fold   = apply_imputations(val_fold)
     test_fold  = apply_imputations(test_fold)
     
-    X_train, y_train = train_fold[feature_cols].values, train_fold['Survived'].values
-    X_val, y_val     = val_fold[feature_cols].values, val_fold['Survived'].values
-    X_test           = test_fold[feature_cols].values
+    X_train, y_train = train_fold[feature_cols], train_fold['Survived'].values
+    X_val, y_val     = val_fold[feature_cols], val_fold['Survived'].values
+    X_test           = test_fold[feature_cols]
     
-    # 4. Huấn luyện 5 mô hình trên Train Fold sạch
+    # 4. Huấn luyện 6 mô hình trên Train Fold sạch
     models = get_models()
     for name, model in models.items():
         model.fit(X_train, y_train)
@@ -759,7 +804,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_base, train_base['Su
 print('=== OUT-OF-FOLD (OOF) ACCURACY BY MODEL (ZERO-LEAKAGE) ===')
 for name in model_names:
     acc = accuracy_score(train_base['Survived'], (oof_predictions[name] >= 0.5).astype(int))
-    print(f'{name:15s}: OOF Accuracy = {acc:.4f} ({acc*100:.2f}%)')
+    print(f'{name:20s}: OOF Accuracy = {acc:.4f} ({acc*100:.2f}%)')
 ```
 
 #### 4.2 Kiểm tra & Trực quan hóa dữ liệu khuyết thiếu sau Phần 4 (Zero-NaN Verification):
@@ -772,8 +817,8 @@ sns.heatmap(test_fold[feature_cols].isnull(), cbar=False, cmap='viridis', ytickl
 axes[1].set_title('Test Set (Sau Phần 4 - 0% Missing)')
 plt.show()
 
-print(f'Số lượng NaN còn lại trong Validation Fold: {val_fold[feature_cols].isnull().sum().sum()}')
-print(f'Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols].isnull().sum().sum()}')
+print(f'✅ Số lượng NaN còn lại trong Validation Fold: {val_fold[feature_cols].isnull().sum().sum()}')
+print(f'✅ Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols].isnull().sum().sum()}')
 ```
 
 ---
@@ -784,13 +829,14 @@ print(f'Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols].is
 ```python
 from sklearn.metrics import confusion_matrix, classification_report
 
-# Trọng số kết hợp tối ưu
+# Trọng số kết hợp tối ưu (Gồm 5 mô hình Cây + 1 mô hình Tuyến tính Logistic Regression)
 weights = {
-    'RandomForest': 0.20,
-    'ExtraTrees': 0.15,
+    'RandomForest': 0.18,
+    'ExtraTrees': 0.12,
     'XGBoost': 0.25,
-    'LightGBM': 0.20,
-    'CatBoost': 0.20
+    'LightGBM': 0.18,
+    'CatBoost': 0.17,
+    'LogisticRegression': 0.10
 }
 
 oof_ensemble = np.zeros(len(train_base))
