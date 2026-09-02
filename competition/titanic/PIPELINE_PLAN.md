@@ -595,6 +595,29 @@ print(f'Train Base Shape: {train_base.shape} | Test Base Shape: {test_base.shape
 train_base.head()
 ```
 
+#### 3.2 Kiểm tra & Trực quan hóa dữ liệu khuyết thiếu sau Phần 3 (Visual Sanity Check):
+```python
+# 1. Danh sách các thuộc tính đang có sau Phần 3 (đã chuyển hóa Cabin -> Deck & HasCabin)
+check_cols = [
+    'Pclass', 'Sex', 'Age', 'SibSp', 'Parch', 'FamilySize', 'IsAlone',
+    'Fare', 'Embarked', 'Title', 'Deck', 'HasCabin', 'TicketFrequency'
+]
+
+# 2. Kiểm tra số lượng missing còn lại
+print('=== MISSING VALUES SAU PHẦN 3 ===')
+print('Train còn thiếu:\n', train_base[check_cols].isnull().sum()[train_base[check_cols].isnull().sum() > 0])
+print('\nTest còn thiếu:\n', test_base[check_cols].isnull().sum()[test_base[check_cols].isnull().sum() > 0])
+
+# 3. Vẽ ma trận missing values kiểm tra trực quan
+fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+sns.heatmap(train_base[check_cols].isnull(), cbar=False, cmap='viridis', yticklabels=False, ax=axes[0])
+axes[0].set_title('Missing Values in Train (Sau Phần 3)')
+
+sns.heatmap(test_base[check_cols].isnull(), cbar=False, cmap='viridis', yticklabels=False, ax=axes[1])
+axes[1].set_title('Missing Values in Test (Sau Phần 3)')
+plt.show()
+```
+
 ---
 
 ### 🔹 Phần 4: Vòng Lặp Huấn Luyện Stratified 5-Fold Cross-Validation (Strict Zero-Leakage)
@@ -685,6 +708,20 @@ print('=== OUT-OF-FOLD (OOF) ACCURACY BY MODEL (ZERO-LEAKAGE) ===')
 for name in model_names:
     acc = accuracy_score(train_base['Survived'], (oof_predictions[name] >= 0.5).astype(int))
     print(f'{name:15s}: OOF Accuracy = {acc:.4f} ({acc*100:.2f}%)')
+```
+
+#### 4.2 Kiểm tra & Trực quan hóa dữ liệu khuyết thiếu sau Phần 4 (Zero-NaN Verification):
+```python
+fig, axes = plt.subplots(1, 2, figsize=(14, 4))
+sns.heatmap(val_fold[feature_cols].isnull(), cbar=False, cmap='viridis', yticklabels=False, ax=axes[0])
+axes[0].set_title('Val Fold (Sau Phần 4 - 0% Missing)')
+
+sns.heatmap(test_fold[feature_cols].isnull(), cbar=False, cmap='viridis', yticklabels=False, ax=axes[1])
+axes[1].set_title('Test Set (Sau Phần 4 - 0% Missing)')
+plt.show()
+
+print(f'✅ Số lượng NaN còn lại trong Validation Fold: {val_fold[feature_cols].isnull().sum().sum()}')
+print(f'✅ Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols].isnull().sum().sum()}')
 ```
 
 ---
