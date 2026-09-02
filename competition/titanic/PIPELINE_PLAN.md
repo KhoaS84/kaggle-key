@@ -272,7 +272,55 @@ graph TD
 
 ---
 
-### 🧩 4.3 Tại Sao Phải Kết Hợp Đa Mô Hình (Ensemble Theory & Stacking)?
+### ⚙️ 4.3 Phân Tích Cấu Hình Siêu Tham Số (Hyperparameters) & Cơ Chế Sử Dụng Mô Hình Trong Code
+
+Trong hàm `get_models()` ở Mục 6.4, các mô hình từ các thư viện chuẩn công nghiệp (`scikit-learn`, `xgboost`, `lightgbm`, `catboost`) được thiết lập với các siêu tham số tối ưu hóa chặt chẽ cho bài toán Titanic (891 dòng):
+
+```python
+def get_models():
+    return {
+        'RandomForest': RandomForestClassifier(n_estimators=300, max_depth=6, min_samples_split=4, random_state=SEED),
+        'ExtraTrees': ExtraTreesClassifier(n_estimators=300, max_depth=6, min_samples_split=4, random_state=SEED),
+        'XGBoost': XGBClassifier(n_estimators=250, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, eval_metric='logloss', random_state=SEED),
+        'LightGBM': LGBMClassifier(n_estimators=250, max_depth=4, learning_rate=0.03, subsample=0.8, colsample_bytree=0.8, verbose=-1, random_state=SEED),
+        'CatBoost': CatBoostClassifier(iterations=300, depth=4, learning_rate=0.03, verbose=0, random_seed=SEED)
+    }
+```
+
+#### 📋 4.3.1 Bảng Giải Nghĩa Chi Tiết Từng Siêu Tham Số
+
+| Thuật toán | Siêu tham số | Giá trị | Bản chất kỹ thuật & Ý nghĩa trên bài toán Titanic |
+| :--- | :--- | :---: | :--- |
+| **Random Forest** & **Extra Trees** | `n_estimators` | `300` | **Số lượng cây quyết định trong rừng.** 300 cây là "điểm ngọt" (sweet spot) giúp kết quả biểu quyết số đông ổn định tuyệt đối mà thời gian chạy chỉ mất dưới 1 giây. |
+| | `max_depth` | `6` | **Độ sâu tối đa của mỗi cây.** Nếu để `None`, cây sẽ mọc sâu 15–20 tầng và học vẹt từng hành khách (Overfitting). Khóa ở mức 6 buộc cây chỉ học các tương tác lớn (như Giới tính, Hạng vé, Trẻ em). |
+| | `min_samples_split` | `4` | **Số mẫu tối thiểu để tách nhánh tiếp.** Tại một nút, nếu còn ít hơn 4 hành khách thì dừng lại không chia tiếp, tránh việc phân nhánh phục vụ riêng cho các trường hợp cá biệt / nhiễu. |
+| | `random_state` | `SEED=42` | **Cố định hạt giống ngẫu nhiên.** Đảm bảo việc chọn ngẫu nhiên các mẫu bootstrap và tập con cột có thể tái lập kết quả 100% trên mọi máy tính. |
+| **XGBoost**, **LightGBM**, **CatBoost** | `n_estimators` / `iterations` | `250` - `300` | **Tổng số vòng lặp boosting (số cây tuần tự).** Mỗi cây mới được thêm vào để sửa sai các mẫu dự đoán sai của cây liền trước. |
+| | `max_depth` / `depth` | `4` | **Độ sâu cây nông (Shallow Trees).** Trong Boosting, nguyên tắc vàng là dùng cây rất nông ($3 - 5$) làm "người học yếu" (weak learner). Độ sâu 4 tầng bắt trọn tương tác 3 biến: `Sex` × `Pclass` × `Age` mà không bị overfit. |
+| | `learning_rate` | `0.03` | **Tốc độ học (Shrinkage).** Sau mỗi cây, ta co giãn đóng góp của nó lại bằng cách nhân với $0.03$. Tốc độ học nhỏ giúp thuật toán tiến dần dần về nghiệm cực tiểu toàn cục mà không bị vọt lố (overshoot). |
+| | `subsample` | `0.8` | **Tỷ lệ lấy mẫu hàng (Row subsampling).** Mỗi cây chỉ được học trên 80% số dòng ngẫu nhiên; 20% còn lại dùng để kiểm tra chéo, tương tự cơ chế mini-batch trong Deep Learning. |
+| | `colsample_bytree` | `0.8` | **Tỷ lệ lấy mẫu cột (Feature subsampling).** Mỗi cây chỉ được nhìn 80% số cột (11/14 cột). Giúp ngăn ngừa việc cột quá mạnh (`Sex`) chi phối toàn bộ tất cả các cây. |
+| | `eval_metric` | `'logloss'` | **Hàm mất mát đánh giá (Binary Cross-Entropy).** Đo lường mức độ tự tin của xác suất dự đoán $P(\text{Survived}=1)$ thay vì chỉ nhìn nhãn thô $0/1$. |
+| | `verbose` | `-1` / `0` | **Tắt thông báo rác (Silent mode).** Ngăn thư viện in hàng trăm dòng tiến độ lặp ra màn hình, giữ notebook luôn sạch sẽ, dễ theo dõi. |
+
+---
+
+#### 🔄 4.3.2 Phân Tích Cơ Chế Vận Hành Code Trong Vòng Lặp 5-Fold
+
+1. **Khởi tạo lại mô hình mới ở từng Fold (`models = get_models()`):**
+   * Mỗi Fold có một tập huấn luyện `train_fold` khác nhau. Việc gọi lại hàm `get_models()` đảm bảo mỗi mô hình luôn là một "trang giấy trắng", không bị lưu lại tàn dư tri thức (weight/trees) từ Fold trước đó.
+2. **Tại sao lấy xác suất `predict_proba(...)[:, 1]` thay vì `predict(...)`?**
+   * `predict(X)` chỉ trả về kết quả cứng ngắc: `$0$` hoặc `$1$`.
+   * `predict_proba(X)[:, 1]` trả về **xác suất liên tục $P(\text{Survived}=1) \in [0.0, 1.0]$** (ví dụ: $0.85$ nghĩa là hành khách có $85\%$ cơ hội sống).
+   * Giá trị xác suất liên tục là điều kiện bắt buộc để thực hiện **Soft Voting Ensemble (Cộng trọng số ở Phần 5)** và **quét ngưỡng cắt xác suất tối ưu $T^*$**.
+3. **Kỹ thuật K-Fold Model Averaging cho tập Test:**
+   * Dòng lệnh: `test_predictions[name] += model.predict_proba(X_test)[:, 1] / N_SPLITS`
+   * Tập Test được dự đoán bởi **5 phiên bản mô hình khác nhau** được huấn luyện độc lập từ 5 Fold, mỗi Fold đóng góp $1/5$ xác suất.
+   * Đây là kỹ thuật Bagging cấp cao (Fold Averaging) giúp kết quả nộp lên Kaggle có khả năng khái quát hóa tối đa, triệt tiêu rủi ro phương sai của bất kỳ Fold cá biệt nào.
+
+---
+
+### 🧩 4.4 Tại Sao Phải Kết Hợp Đa Mô Hình (Ensemble Theory & Stacking)?
 
 ```mermaid
 graph TD
@@ -280,7 +328,7 @@ graph TD
         A["Dữ liệu huấn luyện"] --> M1["<b>Random Forest / Extra Trees</b><br>(Cơ chế: Bagging - Giảm Variance)"]
         A --> M2["<b>XGBoost / LightGBM / CatBoost</b><br>(Cơ chế: Boosting - Giảm Bias)"]
 
-        M1 --> P1["Xác suất dự đoán P_bagging"]
+        P1 --> P1["Xác suất dự đoán P_bagging"]
         M2 --> P2["Xác suất dự đoán P_boosting"]
 
         P1 & P2 --> C["<b>Cơ Chế Bù Trừ Sai Số (Error Cancellation)</b><br>Sai số ngẫu nhiên của Bagging triệt tiêu sai số của Boosting"]
@@ -293,7 +341,7 @@ graph TD
 
 ---
 
-#### 📐 4.3.1 Bản Chất Toán Học: Phân Rã Sai Số (Bias-Variance Decomposition)
+#### 📐 4.4.1 Bản Chất Toán Học: Phân Rã Sai Số (Bias-Variance Decomposition)
 Trong học máy, tổng sai số kỳ vọng của một mô hình được phân rã thành 3 thành phần:
 $$\text{Expected Error} = \text{Bias}^2 + \text{Variance} + \text{Irreducible Noise}$$
 
@@ -307,7 +355,7 @@ $$\text{Expected Error} = \text{Bias}^2 + \text{Variance} + \text{Irreducible No
 
 ---
 
-#### ⚖️ 4.3.2 Định Lý Bồi Thẩm Đoàn Condorcet (Condorcet's Jury Theorem)
+#### ⚖️ 4.4.2 Định Lý Bồi Thẩm Đoàn Condorcet (Condorcet's Jury Theorem)
 Định lý phát biểu rằng: Nếu một hội đồng gồm $N$ cá nhân độc lập đưa ra quyết định, mỗi người có xác suất chọn đúng là $p > 0.5$, thì khi lấy biểu quyết theo đa số, xác suất nhóm đưa ra quyết định đúng $P_N$ là:
 $$P_N = \sum_{k=\lfloor N/2 \rfloor + 1}^N \binom{N}{k} p^k (1-p)^{N-k}$$
 
@@ -320,7 +368,7 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 
 ---
 
-#### 🔍 4.3.3 So Sánh Chi Tiết: Hard Voting vs. Soft Voting vs. Stacking
+#### 🔍 4.4.3 So Sánh Chi Tiết: Hard Voting vs. Soft Voting vs. Stacking
 
 | Phương pháp | Cơ chế hoạt động | Ưu điểm | Nhược điểm | Đánh giá với Titanic |
 | :--- | :--- | :--- | :--- | :--- |
@@ -330,7 +378,7 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 
 ---
 
-#### 🤝 4.3.4 Tính Bù Trừ Sai Số Của "Bộ Ngũ" Mô Hình Trên Titanic:
+#### 🤝 4.4.4 Tính Bù Trừ Sai Số Của "Bộ Ngũ" Mô Hình Trên Titanic:
 
 | Mô hình | Điểm mạnh đặc trưng | Điểm yếu khi đứng một mình | Cách các mô hình khác bù đắp |
 | :--- | :--- | :--- | :--- |
@@ -342,14 +390,14 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 
 ---
 
-#### 📄 4.3.5 Tài Liệu & Bài Báo Nền Tảng Về Stacking:
+#### 📄 4.4.5 Tài Liệu & Bài Báo Nền Tảng Về Stacking:
 * David H. Wolpert (1992). *"Stacked Generalization"*. *Neural Networks*, 5(2), pp. 241–259.
 * 🌐 **Đường dẫn chính:** [ScienceDirect (DOI: 10.1016/S0893-6080(05)80023-1)](https://doi.org/10.1016/S0893-6080(05)80023-1)
 * 📥 **Bản PDF trực tiếp:** [Bản PDF (Research Paper)](http://www.machine-learning.martinsewell.com/ensembles/stacking/Wolpert1992.pdf)
 
 ---
 
-### 📚 4.4 Cơ Sở Khoa Học & Bài Báo Nền Tảng Về Stratified Cross-Validation
+### 📚 4.5 Cơ Sở Khoa Học & Bài Báo Nền Tảng Về Stratified Cross-Validation
 
 Phương pháp **Stratified K-Fold Cross-Validation** (Kiểm định chéo phân tầng) được chứng minh toán học và thực nghiệm là phương pháp tốt nhất để ước lượng độ chính xác và lựa chọn mô hình học máy:
 
@@ -724,8 +772,8 @@ sns.heatmap(test_fold[feature_cols].isnull(), cbar=False, cmap='viridis', ytickl
 axes[1].set_title('Test Set (Sau Phần 4 - 0% Missing)')
 plt.show()
 
-print(f'✅ Số lượng NaN còn lại trong Validation Fold: {val_fold[feature_cols].isnull().sum().sum()}')
-print(f'✅ Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols].isnull().sum().sum()}')
+print(f'Số lượng NaN còn lại trong Validation Fold: {val_fold[feature_cols].isnull().sum().sum()}')
+print(f'Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols].isnull().sum().sum()}')
 ```
 
 ---
