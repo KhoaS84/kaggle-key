@@ -446,6 +446,8 @@ flowchart TD
 ---
 
 ### 🔹 Phần 1: Khởi Tạo Môi Trường & Nhận Diện Đường Dẫn Linh Hoạt (Setup)
+
+#### 1.1 Khởi tạo môi trường & Nhận diện đường dẫn linh hoạt (Setup):
 ```python
 import os
 import re
@@ -543,6 +545,7 @@ plt.show()
 > [!TIP] **Nguyên Tắc Chống Rò Rỉ Ở Phần 3:**
 > Ở bước này, ta **chỉ thực hiện các phép trích xuất độc lập từng dòng** (Regex chuỗi, phép cộng trừ số học, và từ điển ánh xạ cố định). Toàn bộ các phép tính thống kê (`Median Age`, `Median Fare`, `Mode Embarked`) sẽ được **chuyển sang Phần 4 để tính nghiêm ngặt bên trong từng Fold**!
 
+#### 3.1 Trích xuất đặc trưng phi trạng thái (Stateless Feature Extraction):
 ```python
 import re
 
@@ -622,6 +625,7 @@ plt.show()
 
 ### 🔹 Phần 4: Vòng Lặp Huấn Luyện Stratified 5-Fold Cross-Validation (Strict Zero-Leakage)
 
+#### 4.1 Huấn luyện 5 mô hình với Stratified 5-Fold Cross-Validation (Zero-Leakage):
 ```python
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score
@@ -727,6 +731,8 @@ print(f'✅ Số lượng NaN còn lại trong Test Set: {test_fold[feature_cols
 ---
 
 ### 🔹 Phần 5: Kết Hợp Mô Hình Soft Voting Ensemble & Đánh Giá
+
+#### 5.1 Kết hợp mô hình Soft Voting Ensemble & Đánh giá Out-Of-Fold:
 ```python
 from sklearn.metrics import confusion_matrix, classification_report
 
@@ -761,6 +767,8 @@ print(classification_report(y_true, (oof_ensemble >= 0.5).astype(int)))
 ---
 
 ### 🔹 Phần 6: Xuất File Nộp Bài & Sanity Checks
+
+#### 6.1 Xuất file submission.csv & Kiểm tra tính hợp lệ (Sanity Checks):
 ```python
 # 1. Tạo file kết quả dự đoán
 final_predictions = (test_ensemble >= 0.5).astype(int)
