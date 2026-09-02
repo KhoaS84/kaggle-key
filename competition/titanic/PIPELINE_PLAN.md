@@ -328,7 +328,7 @@ graph TD
         A["Dữ liệu huấn luyện"] --> M1["<b>Random Forest / Extra Trees</b><br>(Cơ chế: Bagging - Giảm Variance)"]
         A --> M2["<b>XGBoost / LightGBM / CatBoost</b><br>(Cơ chế: Boosting - Giảm Bias)"]
 
-        P1 --> P1["Xác suất dự đoán P_bagging"]
+        M1 --> P1["Xác suất dự đoán P_bagging"]
         M2 --> P2["Xác suất dự đoán P_boosting"]
 
         P1 & P2 --> C["<b>Cơ Chế Bù Trừ Sai Số (Error Cancellation)</b><br>Sai số ngẫu nhiên của Bagging triệt tiêu sai số của Boosting"]
