@@ -260,15 +260,15 @@ graph TD
 
 ### 📊 4.2 Bảng Ma Trận So Sánh Tổng Hợp Các Mô Hình
 
-| Tiêu chí | Random Forest | Extra Trees | XGBoost | LightGBM | CatBoost | Logistic Regression |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Họ thuật toán** | Bagging | Random Bagging | Gradient Boosting | Gradient Boosting | Gradient Boosting | Linear Model |
-| **Cơ chế chính** | Giảm phương sai | Giảm phương sai mạnh | Giảm độ chệch | Giảm độ chệch | Giảm độ chệch | Phân loại tuyến tính |
-| **Cấu trúc cây** | Level-wise độc lập | Cắt ngẫu nhiên độc lập | Level-wise tuần tự | Leaf-wise tuần tự | Symmetric tuần tự | Không dùng cây |
-| **Chống Overfit trên 891 dòng** | ⭐⭐⭐⭐⭐ (Rất cao) | ⭐⭐⭐⭐⭐ (Rất cao) | ⭐⭐⭐⭐ (Cần chỉnh max_depth) | ⭐⭐⭐ (Dễ overfit) | ⭐⭐⭐⭐⭐ (Rất cao) | ⭐⭐⭐⭐⭐ (Không overfit) |
-| **Xử lý biến phân loại** | Cần mã hóa | Cần mã hóa | Cần mã hóa | Tốt | ⭐⭐⭐⭐⭐ (Xuất sắc) | Bắt buộc One-Hot |
-| **Yêu cầu Scale dữ liệu?** | ❌ Không | ❌ Không | ❌ Không | ❌ Không | ❌ Không | ✅ Bắt buộc |
-| **Vai trò trong Titanic Pipeline** | Mô hình cơ sở | Tăng độ đa dạng | Dự đoán mũi nhọn | Bổ trợ Boosting | Xử lý biến chữ & danh xưng | Baseline & Meta-Learner |
+| Tiêu chí                           |   Random Forest    |      Extra Trees       |          XGBoost           |     LightGBM      |          CatBoost          |   Logistic Regression   |
+| :--------------------------------- | :----------------: | :--------------------: | :------------------------: | :---------------: | :------------------------: | :---------------------: |
+| **Họ thuật toán**                  |      Bagging       |     Random Bagging     |     Gradient Boosting      | Gradient Boosting |     Gradient Boosting      |      Linear Model       |
+| **Cơ chế chính**                   |  Giảm phương sai   |  Giảm phương sai mạnh  |       Giảm độ chệch        |   Giảm độ chệch   |       Giảm độ chệch        |  Phân loại tuyến tính   |
+| **Cấu trúc cây**                   | Level-wise độc lập | Cắt ngẫu nhiên độc lập |     Level-wise tuần tự     | Leaf-wise tuần tự |     Symmetric tuần tự      |     Không dùng cây      |
+| **Chống Overfit trên 891 dòng**    |  ⭐⭐⭐⭐⭐ (Rất cao)   |    ⭐⭐⭐⭐⭐ (Rất cao)     | ⭐⭐⭐⭐ (Cần chỉnh max_depth) | ⭐⭐⭐ (Dễ overfit)  |      ⭐⭐⭐⭐⭐ (Rất cao)       |  ⭐⭐⭐⭐⭐ (Không overfit)  |
+| **Xử lý biến phân loại**           |     Cần mã hóa     |       Cần mã hóa       |         Cần mã hóa         |        Tốt        |      ⭐⭐⭐⭐⭐ (Xuất sắc)      |    Bắt buộc One-Hot     |
+| **Yêu cầu Scale dữ liệu?**         |      ❌ Không       |        ❌ Không         |          ❌ Không           |      ❌ Không      |          ❌ Không           |       ✅ Bắt buộc        |
+| **Vai trò trong Titanic Pipeline** |   Mô hình cơ sở    |    Tăng độ đa dạng     |      Dự đoán mũi nhọn      |  Bổ trợ Boosting  | Xử lý biến chữ & danh xưng | Baseline & Meta-Learner |
 
 ---
 
@@ -346,19 +346,22 @@ def get_models():
 
 ```mermaid
 graph TD
-    subgraph EnsMech ["Cơ Chế Học Kết Hợp Đa Mô Hình Ensemble"]
+    subgraph EnsMech ["Cơ Chế Học Kết Hợp Đa Mô Hình Ensemble (Bộ Sáu 6 Mô Hình)"]
         A["Dữ liệu huấn luyện"] --> M1["<b>Random Forest / Extra Trees</b><br>(Cơ chế: Bagging - Giảm Variance)"]
         A --> M2["<b>XGBoost / LightGBM / CatBoost</b><br>(Cơ chế: Boosting - Giảm Bias)"]
+        A --> M3["<b>Logistic Regression Pipeline</b><br>(Cơ chế: Linear Model - Tăng Diversity)"]
 
         M1 --> P1["Xác suất dự đoán P_bagging"]
         M2 --> P2["Xác suất dự đoán P_boosting"]
+        M3 --> P3["Xác suất dự đoán P_linear"]
 
-        P1 & P2 --> C["<b>Cơ Chế Bù Trừ Sai Số (Error Cancellation)</b><br>Sai số ngẫu nhiên của Bagging triệt tiêu sai số của Boosting"]
-        C --> Out["<b>Kết quả Ensemble</b><br>Variance thấp + Bias thấp -> Accuracy tối đa"]
+        P1 & P2 & P3 --> C["<b>Cơ Chế Bù Trừ Sai Số & Đa Dạng Hóa (Error Cancellation & Diversity)</b><br>Bagging (triệt tiêu phương sai) + Boosting (bắt phi tuyến) + Linear (giữ biên tuyến tính)"]
+        C --> Out["<b>Kết quả Ensemble</b><br>Variance thấp + Bias thấp + Diversity cao -> Accuracy tối đa"]
     end
     style M1 fill:#e3f2fd,stroke:#1565c0;
     style M2 fill:#e8f5e9,stroke:#2e7d32;
-    style Out fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    style M3 fill:#fff3e0,stroke:#e65100;
+    style Out fill:#e0f2f1,stroke:#00897b,stroke-width:2px;
 ```
 
 ---
@@ -392,15 +395,15 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 
 #### 🔍 4.4.3 So Sánh Chi Tiết: Hard Voting vs. Soft Voting vs. Stacking
 
-| Phương pháp | Cơ chế hoạt động | Ưu điểm | Nhược điểm | Đánh giá với Titanic |
-| :--- | :--- | :--- | :--- | :--- |
-| **Hard Voting** (Majority Vote) | Đếm số phiếu nhãn dự đoán $0$ hoặc $1$ của từng mô hình, nhãn nào nhiều phiếu hơn thì thắng. | Dễ hiểu, không cần xác suất. | **Bỏ qua độ tự tin (Confidence):** Dự đoán chắc chắn 99% bị tính ngang hàng với dự đoán phân vân 51%. | ❌ Kém linh hoạt, dễ mất thông tin biên. |
-| **Soft Voting** (Weighted Average) | Tính trung bình có trọng số xác suất dự đoán sống sót: $P_{\text{ens}} = \sum w_i P_i$. | Tận dụng toàn bộ độ tự tin của mô hình; tạo biên phân tách mềm mại (smooth boundary); dễ quét ngưỡng cắt xác suất $T$. | Cần chọn trọng số $w_i$ (dựa theo CV Accuracy). | ⭐⭐⭐⭐⭐ **Khuyến nghị số 1 cho Titanic** (ổn định, điểm LB cao nhất). |
-| **Stacking** (Stacked Generalization) | Dùng xác suất OOF của các Base Models làm đặc trưng đầu vào ($X_{\text{meta}}$) cho một mô hình cấp 2 (**Meta-Learner: Logistic Regression**). | Tự động học trọng số phi tuyến tính; phát hiện mô hình nào giỏi ở phân khúc dữ liệu nào. | Có nguy cơ Overfit nếu tập dữ liệu quá nhỏ và meta-model quá phức tạp. | ⭐⭐⭐⭐ Rất tốt khi dùng Logistic Regression đơn giản làm Meta-Model. |
+| Phương pháp                           | Cơ chế hoạt động                                                                                                                               | Ưu điểm                                                                                                                | Nhược điểm                                                                                            | Đánh giá với Titanic                                                |
+| :------------------------------------ | :--------------------------------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------ |
+| **Hard Voting** (Majority Vote)       | Đếm số phiếu nhãn dự đoán $0$ hoặc $1$ của từng mô hình, nhãn nào nhiều phiếu hơn thì thắng.                                                   | Dễ hiểu, không cần xác suất.                                                                                           | **Bỏ qua độ tự tin (Confidence):** Dự đoán chắc chắn 99% bị tính ngang hàng với dự đoán phân vân 51%. | ❌ Kém linh hoạt, dễ mất thông tin biên.                             |
+| **Soft Voting** (Weighted Average)    | Tính trung bình có trọng số xác suất dự đoán sống sót: $P_{\text{ens}} = \sum w_i P_i$.                                                        | Tận dụng toàn bộ độ tự tin của mô hình; tạo biên phân tách mềm mại (smooth boundary); dễ quét ngưỡng cắt xác suất $T$. | Cần chọn trọng số $w_i$ (dựa theo CV Accuracy).                                                       | ⭐⭐⭐⭐⭐ **Khuyến nghị số 1 cho Titanic** (ổn định, điểm LB cao nhất). |
+| **Stacking** (Stacked Generalization) | Dùng xác suất OOF của các Base Models làm đặc trưng đầu vào ($X_{\text{meta}}$) cho một mô hình cấp 2 (**Meta-Learner: Logistic Regression**). | Tự động học trọng số phi tuyến tính; phát hiện mô hình nào giỏi ở phân khúc dữ liệu nào.                               | Có nguy cơ Overfit nếu tập dữ liệu quá nhỏ và meta-model quá phức tạp.                                | ⭐⭐⭐⭐ Rất tốt khi dùng Logistic Regression đơn giản làm Meta-Model.  |
 
 ---
 
-#### 🤝 4.4.4 Tính Bù Trừ Sai Số Của "Bộ Ngũ" Mô Hình Trên Titanic:
+#### 🤝 4.4.4 Tính Bù Trừ Sai Số Của "Bộ Sáu" (6 Mô Hình) Trên Titanic:
 
 | Mô hình | Điểm mạnh đặc trưng | Điểm yếu khi đứng một mình | Cách các mô hình khác bù đắp |
 | :--- | :--- | :--- | :--- |
@@ -409,6 +412,7 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 | **XGBoost** | Bắt quy luật phi tuyến phức tạp nhất (`Sex` × `Pclass` × `Age`). | Dễ học quá sâu vào các mẫu dị biệt (outliers). | Random Forest và Extra Trees kéo xác suất về vùng an toàn. |
 | **LightGBM** | Cấu trúc cây Leaf-wise học sâu ở vùng dữ liệu khó. | Dễ overfit trên 891 dòng dữ liệu nhỏ. | CatBoost cân bằng lại nhờ cấu trúc cây đối xứng (Symmetric). |
 | **CatBoost** | Xử lý hoàn hảo các biến chữ (`Title`, `Deck`, `Embarked`). | Tốc độ chậm hơn trên nhiều biến. | LightGBM và XGBoost tối ưu hóa cực nhanh các biến liên tục (`Fare`, `Age`). |
+| **Logistic Regression** | Biên tuyến tính đơn giản, không bị lừa bởi các tương tác giả, cực kỳ ổn định. | Không tự học được quan hệ phi tuyến phức tạp nếu không tạo biến thủ công. | XGBoost & LightGBM bù đắp khả năng bắt tương tác phi tuyến; Logistic Regression neo xác suất về vùng an toàn ở các phân khúc thưa dữ liệu. |
 
 ---
 
