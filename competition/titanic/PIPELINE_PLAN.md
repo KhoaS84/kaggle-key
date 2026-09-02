@@ -277,17 +277,17 @@ graph TD
 Trong hàm `get_models()` ở Mục 6.4, 6 mô hình từ các thư viện chuẩn công nghiệp (`scikit-learn`, `xgboost`, `lightgbm`, `catboost`) được thiết lập với các siêu tham số tối ưu hóa chặt chẽ cho bài toán Titanic (891 dòng):
 
 ```python
-# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Bung One-Hot & Chuẩn hóa Z-score)
-cat_cols_ohe = ['Pclass', 'Title', 'Deck', 'Embarked']
-num_cols_scale = ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']
-pass_cols = ['Sex', 'IsAlone', 'HasCabin']
+# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Dùng index số để tương thích cả DataFrame lẫn Numpy Array)
+cat_cols_idx = [feature_cols.index(c) for c in ['Pclass', 'Title', 'Deck', 'Embarked']]
+num_cols_idx = [feature_cols.index(c) for c in ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']]
+pass_cols_idx = [feature_cols.index(c) for c in ['Sex', 'IsAlone', 'HasCabin']]
 
 def get_linear_pipeline():
     preprocessor = ColumnTransformer(
         transformers=[
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_ohe),
-            ('num', StandardScaler(), num_cols_scale),
-            ('pass', 'passthrough', pass_cols)
+            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_idx),
+            ('num', StandardScaler(), num_cols_idx),
+            ('pass', 'passthrough', pass_cols_idx)
         ]
     )
     return Pipeline([
@@ -405,13 +405,13 @@ Khi số lượng mô hình độc lập $N$ tăng lên: $\lim_{N \to \infty} P_
 
 #### 🤝 4.4.4 Tính Bù Trừ Sai Số Của "Bộ Sáu" (6 Mô Hình) Trên Titanic:
 
-| Mô hình | Điểm mạnh đặc trưng | Điểm yếu khi đứng một mình | Cách các mô hình khác bù đắp |
-| :--- | :--- | :--- | :--- |
-| **Random Forest** | Rất ổn định, không bao giờ overfit nặng. | Dự đoán cứng nhắc dạng bậc thang. | XGBoost & CatBoost làm mượt biên phân cách xác suất. |
-| **Extra Trees** | Ngưỡng cắt ngẫu nhiên, tạo độ đa dạng cao nhất. | Độ chệch (Bias) có thể tăng nhẹ. | XGBoost bù lại độ chính xác cao cho từng điểm dữ liệu. |
-| **XGBoost** | Bắt quy luật phi tuyến phức tạp nhất (`Sex` × `Pclass` × `Age`). | Dễ học quá sâu vào các mẫu dị biệt (outliers). | Random Forest và Extra Trees kéo xác suất về vùng an toàn. |
-| **LightGBM** | Cấu trúc cây Leaf-wise học sâu ở vùng dữ liệu khó. | Dễ overfit trên 891 dòng dữ liệu nhỏ. | CatBoost cân bằng lại nhờ cấu trúc cây đối xứng (Symmetric). |
-| **CatBoost** | Xử lý hoàn hảo các biến chữ (`Title`, `Deck`, `Embarked`). | Tốc độ chậm hơn trên nhiều biến. | LightGBM và XGBoost tối ưu hóa cực nhanh các biến liên tục (`Fare`, `Age`). |
+| Mô hình                 | Điểm mạnh đặc trưng                                                           | Điểm yếu khi đứng một mình                                                | Cách các mô hình khác bù đắp                                                                                                               |
+| :---------------------- | :---------------------------------------------------------------------------- | :------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Random Forest**       | Rất ổn định, không bao giờ overfit nặng.                                      | Dự đoán cứng nhắc dạng bậc thang.                                         | XGBoost & CatBoost làm mượt biên phân cách xác suất.                                                                                       |
+| **Extra Trees**         | Ngưỡng cắt ngẫu nhiên, tạo độ đa dạng cao nhất.                               | Độ chệch (Bias) có thể tăng nhẹ.                                          | XGBoost bù lại độ chính xác cao cho từng điểm dữ liệu.                                                                                     |
+| **XGBoost**             | Bắt quy luật phi tuyến phức tạp nhất (`Sex` × `Pclass` × `Age`).              | Dễ học quá sâu vào các mẫu dị biệt (outliers).                            | Random Forest và Extra Trees kéo xác suất về vùng an toàn.                                                                                 |
+| **LightGBM**            | Cấu trúc cây Leaf-wise học sâu ở vùng dữ liệu khó.                            | Dễ overfit trên 891 dòng dữ liệu nhỏ.                                     | CatBoost cân bằng lại nhờ cấu trúc cây đối xứng (Symmetric).                                                                               |
+| **CatBoost**            | Xử lý hoàn hảo các biến chữ (`Title`, `Deck`, `Embarked`).                    | Tốc độ chậm hơn trên nhiều biến.                                          | LightGBM và XGBoost tối ưu hóa cực nhanh các biến liên tục (`Fare`, `Age`).                                                                |
 | **Logistic Regression** | Biên tuyến tính đơn giản, không bị lừa bởi các tương tác giả, cực kỳ ổn định. | Không tự học được quan hệ phi tuyến phức tạp nếu không tạo biến thủ công. | XGBoost & LightGBM bù đắp khả năng bắt tương tác phi tuyến; Logistic Regression neo xác suất về vùng an toàn ở các phân khúc thưa dữ liệu. |
 
 ---
@@ -717,17 +717,17 @@ feature_cols = [
     'LogFare', 'FarePerPerson', 'Embarked', 'Title', 'Deck', 'HasCabin', 'TicketFrequency'
 ]
 
-# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Bung One-Hot & Chuẩn hóa Z-score)
-cat_cols_ohe = ['Pclass', 'Title', 'Deck', 'Embarked']
-num_cols_scale = ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']
-pass_cols = ['Sex', 'IsAlone', 'HasCabin']
+# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Dùng index số để tương thích cả DataFrame lẫn Numpy Array)
+cat_cols_idx = [feature_cols.index(c) for c in ['Pclass', 'Title', 'Deck', 'Embarked']]
+num_cols_idx = [feature_cols.index(c) for c in ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']]
+pass_cols_idx = [feature_cols.index(c) for c in ['Sex', 'IsAlone', 'HasCabin']]
 
 def get_linear_pipeline():
     preprocessor = ColumnTransformer(
         transformers=[
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_ohe),
-            ('num', StandardScaler(), num_cols_scale),
-            ('pass', 'passthrough', pass_cols)
+            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_idx),
+            ('num', StandardScaler(), num_cols_idx),
+            ('pass', 'passthrough', pass_cols_idx)
         ]
     )
     return Pipeline([
