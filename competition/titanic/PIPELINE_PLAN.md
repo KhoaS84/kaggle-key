@@ -277,7 +277,7 @@ graph TD
 Trong hàm `get_models()` ở Mục 6.4, 6 mô hình từ các thư viện chuẩn công nghiệp (`scikit-learn`, `xgboost`, `lightgbm`, `catboost`) được thiết lập với các siêu tham số tối ưu hóa chặt chẽ cho bài toán Titanic (891 dòng):
 
 ```python
-# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Dùng index số để tương thích cả DataFrame lẫn Numpy Array)
+# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Dùng index số + SimpleImputer chống NaN 100%)
 cat_cols_idx = [feature_cols.index(c) for c in ['Pclass', 'Title', 'Deck', 'Embarked']]
 num_cols_idx = [feature_cols.index(c) for c in ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']]
 pass_cols_idx = [feature_cols.index(c) for c in ['Sex', 'IsAlone', 'HasCabin']]
@@ -285,8 +285,14 @@ pass_cols_idx = [feature_cols.index(c) for c in ['Sex', 'IsAlone', 'HasCabin']]
 def get_linear_pipeline():
     preprocessor = ColumnTransformer(
         transformers=[
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_idx),
-            ('num', StandardScaler(), num_cols_idx),
+            ('cat', Pipeline([
+                ('imputer', SimpleImputer(strategy='most_frequent')),
+                ('ohe', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+            ]), cat_cols_idx),
+            ('num', Pipeline([
+                ('imputer', SimpleImputer(strategy='median')),
+                ('scaler', StandardScaler())
+            ]), num_cols_idx),
             ('pass', 'passthrough', pass_cols_idx)
         ]
     )
@@ -706,6 +712,7 @@ from sklearn.metrics import accuracy_score
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
@@ -717,7 +724,7 @@ feature_cols = [
     'LogFare', 'FarePerPerson', 'Embarked', 'Title', 'Deck', 'HasCabin', 'TicketFrequency'
 ]
 
-# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Dùng index số để tương thích cả DataFrame lẫn Numpy Array)
+# Cấu hình tiền xử lý riêng cho nhánh Logistic Regression (Dùng index số + SimpleImputer chống NaN 100%)
 cat_cols_idx = [feature_cols.index(c) for c in ['Pclass', 'Title', 'Deck', 'Embarked']]
 num_cols_idx = [feature_cols.index(c) for c in ['Age', 'SibSp', 'Parch', 'FamilySize', 'LogFare', 'FarePerPerson', 'TicketFrequency']]
 pass_cols_idx = [feature_cols.index(c) for c in ['Sex', 'IsAlone', 'HasCabin']]
@@ -725,8 +732,14 @@ pass_cols_idx = [feature_cols.index(c) for c in ['Sex', 'IsAlone', 'HasCabin']]
 def get_linear_pipeline():
     preprocessor = ColumnTransformer(
         transformers=[
-            ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols_idx),
-            ('num', StandardScaler(), num_cols_idx),
+            ('cat', Pipeline([
+                ('imputer', SimpleImputer(strategy='most_frequent')),
+                ('ohe', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
+            ]), cat_cols_idx),
+            ('num', Pipeline([
+                ('imputer', SimpleImputer(strategy='median')),
+                ('scaler', StandardScaler())
+            ]), num_cols_idx),
             ('pass', 'passthrough', pass_cols_idx)
         ]
     )
@@ -748,6 +761,7 @@ def get_models():
         'LogisticRegression': get_linear_pipeline()
     }
 
+# ⚠️ QUAN TRỌNG: Phải khởi tạo lại mảng 0 mỗi khi chạy Cell để tránh bị cộng dồn xác suất (Cumulative Trap)!
 model_names = list(get_models().keys())
 oof_predictions = {name: np.zeros(len(train_base)) for name in model_names}
 test_predictions = {name: np.zeros(len(test_base)) for name in model_names}
@@ -881,10 +895,15 @@ assert len(submission) == 418, f'Lỗi: File submission phải có đúng 418 d�
 assert submission.isnull().sum().sum() == 0, 'Lỗi: File submission có chứa giá trị NaN!'
 assert set(submission['Survived'].unique()).issubset({0, 1}), 'Lỗi: Giá trị Survived phải là 0 hoặc 1!'
 
-# 3. Lưu file submission
+# 3. Kiểm tra số lượng người sống sót (Survival Rate Check - Chống bẫy cộng dồn xác suất)
+survivor_count = submission['Survived'].sum()
+survivor_rate = submission['Survived'].mean()
+print(f'Số người sống sót dự đoán: {survivor_count} / {len(submission)} ({survivor_rate:.2%})')
+assert 135 <= survivor_count <= 185, f'❌ CẢNH BÁO: Số người sống ({survivor_count}) bất thường! Cần kiểm tra lại: test_predictions có bị cộng dồn trùng lặp do chạy lại Cell 4 không?'
+
+# 4. Lưu file submission
 submission.to_csv(OUTPUT_PATH, index=False)
 print(f'✅ File submission đã được lưu thành công tại: {OUTPUT_PATH}')
-print(f'Tỷ lệ dự đoán người sống sót: {submission["Survived"].mean():.2%}')
 submission.head(10)
 ```
 
@@ -897,6 +916,7 @@ submission.head(10)
 > - [ ] **Hiểu rõ lý thuyết từng Model:** Phân biệt rõ Bagging (RF, ExtraTrees) vs Boosting (XGB, LGBM, CatBoost) và cách chúng bổ trợ nhau.
 > - [ ] **Tái lập kết quả (Reproducibility):** Cố định seed ngẫu nhiên cho tất cả thư viện (numpy, random, sklearn, xgboost, lightgbm, catboost).
 > - [ ] **Không rò rỉ dữ liệu (No Leakage):** Mọi phép chuẩn hóa, điền missing value, target encoding chỉ học từ tập Train fold.
+> - [ ] **Tỷ lệ sống sót chuẩn xác (Survival Rate Check):** Số người sống sót dự đoán trên tập Test phải nằm trong khoảng **145 – 170 người (35% – 41%)**. Nếu vượt quá 190 người, chắc chắn biến `test_predictions` đã bị cộng dồn trùng lặp khi chạy lại cell!
 > - [ ] **Bảo đảm định dạng nộp bài (Format Validation):**
 >   - Đủ đúng **418 dòng** + 1 dòng header `PassengerId,Survived`.
 >   - Không có giá trị `NaN` hoặc `Null`.
